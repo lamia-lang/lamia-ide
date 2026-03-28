@@ -1,0 +1,36 @@
+{
+  "comments": {
+    "lineComment": "#",
+    "blockComment": ["\"\"\"", "\"\"\""]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"", "notIn": ["string"] },
+    { "open": "'", "close": "'", "notIn": ["string"] }
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["\"", "\""],
+    ["'", "'"]
+  ],
+  "folding": {
+    "offSide": true,
+    "markers": {
+      "start": "^\\s*#\\s*──",
+      "end": "^\\s*$"
+    }
+  },
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(def|for|if|elif|else|while|try|except|finally|with|class)\\b.*:\\s*$",
+    "decreaseIndentPattern": "^\\s*(elif|else|except|finally)\\b"
+  }
+}

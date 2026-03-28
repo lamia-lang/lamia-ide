@@ -1,0 +1,33 @@
+{
+  "LLM Call with JSON output": {
+    "scope": "lamia",
+    "prefix": "ask",
+    "body": [
+      "${1:result} = ${2:agent_name}(${3:param}=${4:value}) -> JSON[${5:Model}]"
+    ],
+    "description": "Call an agent and parse structured JSON output"
+  },
+  "LLM Call plain text": {
+    "scope": "lamia",
+    "prefix": "asktext",
+    "body": [
+      "${1:result} = ${2:agent_name}(${3:param}=${4:value})"
+    ],
+    "description": "Call an agent and get plain text output"
+  },
+  "Pydantic Model": {
+    "scope": "lamia",
+    "prefix": "model",
+    "body": [
+      "class ${1:ModelName}(BaseModel):",
+      "    ${2:field}: ${3:str} = Field(description=\"${4:description}\")"
+    ],
+    "description": "Define a Pydantic model for structured LLM output"
+  },
+  "Prompt variable": {
+    "scope": "lamia-prompt",
+    "prefix": "var",
+    "body": ["{${1:variable_name}}"],
+    "description": "Insert a template variable placeholder"
+  }
+}

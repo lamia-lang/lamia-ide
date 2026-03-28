@@ -1,0 +1,90 @@
+{
+  "name": "lamia-language",
+  "displayName": "Lamia Language",
+  "description": "Syntax highlighting, snippets, and run support for the Lamia language (.lm, .hu files)",
+  "version": "0.1.0",
+  "publisher": "lamia",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Snippets"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "lamia",
+        "aliases": ["Lamia", "lamia"],
+        "extensions": [".lm"],
+        "configuration": "./language-configuration-lm.json"
+      },
+      {
+        "id": "lamia-prompt",
+        "aliases": ["Lamia Prompt", "Human Prompt"],
+        "extensions": [".hu"],
+        "configuration": "./language-configuration-hu.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lamia",
+        "scopeName": "source.lamia",
+        "path": "./syntaxes/lm.tmLanguage.json"
+      },
+      {
+        "language": "lamia-prompt",
+        "scopeName": "text.lamia.prompt",
+        "path": "./syntaxes/hu.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "lamia",
+        "path": "./lamia.code-snippets"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "lamia",
+        "required": ["file"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The .lm file to run"
+          }
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "lamia.run",
+        "title": "Lamia: Run Current File",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "lamia.run",
+          "when": "resourceExtname == .lm",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "lamia.run",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "resourceExtname == .lm"
+      }
+    ]
+  },
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,7 @@
+dist/
+node_modules/
+extension/out/
+extension/node_modules/
+.DS_Store
+*.vsix
+.vscode/

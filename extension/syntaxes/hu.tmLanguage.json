@@ -1,0 +1,41 @@
+{
+  "name": "Lamia Prompt",
+  "scopeName": "text.lamia.prompt",
+  "fileTypes": ["hu"],
+  "patterns": [
+    { "include": "#variable" },
+    { "include": "#heading" },
+    { "include": "#list-item" },
+    { "include": "#emphasis" },
+    { "include": "#code-inline" }
+  ],
+  "repository": {
+    "variable": {
+      "comment": "Template variables like {prd_content}, {specs}",
+      "match": "\\{([a-z_][a-z0-9_]*)\\}",
+      "name": "variable.other.placeholder.lamia",
+      "captures": {
+        "1": { "name": "variable.other.readwrite.lamia" }
+      }
+    },
+    "heading": {
+      "match": "^(#{1,6})\\s+(.+)$",
+      "captures": {
+        "1": { "name": "punctuation.definition.heading.markdown" },
+        "2": { "name": "markup.heading.markdown" }
+      }
+    },
+    "list-item": {
+      "match": "^\\s*(-|\\d+\\.)\\s+",
+      "name": "punctuation.definition.list.markdown"
+    },
+    "emphasis": {
+      "match": "\\*\\*([^*]+)\\*\\*",
+      "name": "markup.bold.markdown"
+    },
+    "code-inline": {
+      "match": "`([^`]+)`",
+      "name": "markup.inline.raw.string.markdown"
+    }
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "name": "Lamia",
+  "scopeName": "source.lamia",
+  "fileTypes": ["lm"],
+  "patterns": [
+    { "include": "#lamia-call" },
+    { "include": "#lamia-arrow" },
+    { "include": "#docstring" },
+    { "include": "#comment" },
+    { "include": "#string-triple-double" },
+    { "include": "#string-triple-single" },
+    { "include": "#string-double" },
+    { "include": "#string-single" },
+    { "include": "#fstring" },
+    { "include": "#keywords" },
+    { "include": "#builtins" },
+    { "include": "#constants" },
+    { "include": "#function-def" },
+    { "include": "#class-def" },
+    { "include": "#decorator" },
+    { "include": "#type-hint" },
+    { "include": "#number" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "lamia-call": {
+      "comment": "Lamia agent calls: agent_name(args) -> JSON[Model]",
+      "match": "\\b([a-z_][a-z0-9_]*)\\s*(\\()(.+?)(\\))\\s*(->)\\s*(JSON)(\\[)([A-Z][a-zA-Z0-9_]*)(\\])",
+      "captures": {
+        "1": { "name": "entity.name.function.agent.lamia" },
+        "2": { "name": "punctuation.paren.open.lamia" },
+        "3": { "name": "variable.parameter.lamia", "patterns": [
+          { "include": "#lamia-kwarg" },
+          { "include": "#string-double" },
+          { "include": "#string-single" }
+        ]},
+        "4": { "name": "punctuation.paren.close.lamia" },
+        "5": { "name": "keyword.operator.arrow.lamia" },
+        "6": { "name": "storage.type.json.lamia" },
+        "7": { "name": "punctuation.bracket.open.lamia" },
+        "8": { "name": "entity.name.type.model.lamia" },
+        "9": { "name": "punctuation.bracket.close.lamia" }
+      }
+    },
+    "lamia-arrow": {
+      "comment": "Lamia arrow operator in multi-line calls",
+      "match": "(->)\\s*(JSON)(\\[)([A-Z][a-zA-Z0-9_]*)(\\])",
+      "captures": {
+        "1": { "name": "keyword.operator.arrow.lamia" },
+        "2": { "name": "storage.type.json.lamia" },
+        "3": { "name": "punctuation.bracket.open.lamia" },
+        "4": { "name": "entity.name.type.model.lamia" },
+        "5": { "name": "punctuation.bracket.close.lamia" }
+      }
+    },
+    "lamia-kwarg": {
+      "match": "\\b([a-z_][a-z0-9_]*)\\s*(=)",
+      "captures": {
+        "1": { "name": "variable.parameter.function.lamia" },
+        "2": { "name": "keyword.operator.assignment.python" }
+      }
+    },
+    "docstring": {
+      "begin": "^\\s*(\"\"\"|''')",
+      "end": "\\1",
+      "name": "comment.block.documentation.python"
+    },
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.python"
+    },
+    "string-triple-double": {
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple.double.python",
+      "patterns": [{ "include": "#string-interpolation" }]
+    },
+    "string-triple-single": {
+      "begin": "'''",
+      "end": "'''",
+      "name": "string.quoted.triple.single.python",
+      "patterns": [{ "include": "#string-interpolation" }]
+    },
+    "string-double": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.python",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.python" },
+        { "include": "#string-interpolation" }
+      ]
+    },
+    "string-single": {
+      "begin": "'",
+      "end": "'",
+      "name": "string.quoted.single.python",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+    "fstring": {
+      "begin": "[fF]\"",
+      "end": "\"",
+      "name": "string.quoted.double.python",
+      "patterns": [
+        { "include": "#string-interpolation" },
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+    "string-interpolation": {
+      "match": "\\{[^}]+\\}",
+      "name": "meta.interpolation.python"
+    },
+    "keywords": {
+      "match": "\\b(import|from|as|def|class|return|if|elif|else|for|while|try|except|finally|with|raise|pass|break|continue|yield|async|await|and|or|not|in|is|lambda|assert|del|global|nonlocal)\\b",
+      "name": "keyword.control.python"
+    },
+    "builtins": {
+      "match": "\\b(print|len|range|str|int|float|list|dict|tuple|set|bool|None|True|False|isinstance|type|super|enumerate|zip|map|filter|sorted|open|any|all|sum|min|max|abs|round|hasattr|getattr|setattr)\\b",
+      "name": "support.function.builtin.python"
+    },
+    "constants": {
+      "match": "\\b(True|False|None)\\b",
+      "name": "constant.language.python"
+    },
+    "function-def": {
+      "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.python" },
+        "2": { "name": "entity.name.function.python" }
+      }
+    },
+    "class-def": {
+      "match": "\\b(class)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.python" },
+        "2": { "name": "entity.name.class.python" }
+      }
+    },
+    "decorator": {
+      "match": "^\\s*(@[a-zA-Z_][a-zA-Z0-9_.]*)",
+      "name": "meta.decorator.python"
+    },
+    "type-hint": {
+      "match": "\\b(str|int|float|bool|list|dict|tuple|set|Path|Optional|Type|BaseModel)\\b",
+      "name": "support.type.python"
+    },
+    "number": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.python"
+    },
+    "operator": {
+      "match": "(==|!=|<=|>=|<|>|\\+|-|\\*|/|%|\\*\\*|//|=|\\+=|-=|\\*=|/=)",
+      "name": "keyword.operator.python"
+    }
+  }
+}

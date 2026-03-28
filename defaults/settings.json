@@ -1,0 +1,23 @@
+{
+  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.startupEditor": "welcomePage",
+  "editor.fontSize": 14,
+  "editor.lineHeight": 1.6,
+  "editor.minimap.enabled": false,
+  "editor.wordWrap": "on",
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "editor.renderWhitespace": "none",
+  "editor.smoothScrolling": true,
+  "explorer.confirmDelete": true,
+  "explorer.confirmDragAndDrop": false,
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  "terminal.integrated.defaultProfile.osx": "bash",
+  "terminal.integrated.fontSize": 13,
+  "files.associations": {
+    "*.lm": "lamia-hybrid",
+    "*.hu": "lamia-prompt"
+  },
+  "telemetry.telemetryLevel": "off"
+}

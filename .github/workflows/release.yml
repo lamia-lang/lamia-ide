@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  icons:
+    name: Generate icons
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pillow
+        run: pip3 install Pillow
+
+      - name: Generate icons
+        run: python3 scripts/generate-icons.py
+
+      - name: Upload icons
+        uses: actions/upload-artifact@v4
+        with:
+          name: icons
+          path: branding/icons/
+          if-no-files-found: error
+
+  build:
+    needs: icons
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            name: macOS (x64)
+          - os: macos-14
+            name: macOS (arm64)
+          - os: ubuntu-latest
+            name: Linux (x64)
+          - os: windows-latest
+            name: Windows (x64)
+
+    name: Build — ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download icons
+        uses: actions/download-artifact@v4
+        with:
+          name: icons
+          path: branding/icons/
+
+      - name: Build
+        shell: bash
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deliverable-${{ matrix.os }}
+          path: dist/out/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List deliverables
+        run: ls -lhR artifacts/
+
+      - name: Determine tag and app name
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "app_name=$(grep '^APP_NAME=' build.sh | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "${{ steps.meta.outputs.app_name }} ${{ steps.meta.outputs.tag }}"
+          draft: true
+          generate_release_notes: true
+          files: artifacts/*

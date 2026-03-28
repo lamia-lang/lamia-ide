@@ -20,11 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Pillow
-        run: pip3 install Pillow
-
       - name: Generate icons
-        run: python3 scripts/generate-icons.py
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install Pillow
+          python3 scripts/generate-icons.py
 
       - name: Upload icons
         uses: actions/upload-artifact@v4

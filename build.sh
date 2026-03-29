@@ -6,7 +6,7 @@ set -euo pipefail
 APP_NAME="Lamia Studio"
 APP_TAGLINE="Write Lamia. Run anything."
 LAMIA_VERSION="1.0.0"
-VSCODIUM_VERSION="1.100.33714"
+VSCODIUM_VERSION="1.112.01907"
 DIST_DIR="dist"
 
 APP_NAME_SLUG="$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
@@ -269,11 +269,21 @@ else
     fi
 fi
 
-# ── Bundle the Lamia extension ───────────────────────────────────────────────
+# ── Compile and bundle the Lamia extension ───────────────────────────────────
+echo "Compiling extension..."
+(cd extension && npm install --prefer-offline --silent && ./node_modules/.bin/tsc -p ./)
 echo "Bundling Lamia extension..."
 LAMIA_EXT_DIR="${EXTENSIONS_DIR}/lamia-language"
 mkdir -p "${LAMIA_EXT_DIR}"
-cp -R extension/* "${LAMIA_EXT_DIR}/"
+# Copy only the runtime files — skip src, node_modules, tsconfig
+cp -R extension/out                    "${LAMIA_EXT_DIR}/out"
+cp    extension/package.json           "${LAMIA_EXT_DIR}/package.json"
+cp    extension/package-lock.json      "${LAMIA_EXT_DIR}/package-lock.json" 2>/dev/null || true
+cp -R extension/syntaxes               "${LAMIA_EXT_DIR}/syntaxes"
+cp -R extension/icons                  "${LAMIA_EXT_DIR}/icons"
+cp    extension/lamia.code-snippets    "${LAMIA_EXT_DIR}/lamia.code-snippets"
+cp    extension/language-configuration-lm.json  "${LAMIA_EXT_DIR}/language-configuration-lm.json"
+cp    extension/language-configuration-hu.json  "${LAMIA_EXT_DIR}/language-configuration-hu.json"
 
 # ── Apply in-app branding assets ─────────────────────────────────────────────
 echo "Applying in-app branding..."
@@ -302,6 +312,7 @@ if [ -f defaults/settings.json ]; then
         DEFAULT_SETTINGS_DIR="${WORK_DIR}/resources/app/out/vs/workbench"
     fi
     mkdir -p "${DEFAULT_SETTINGS_DIR}"
+    cp defaults/settings.json "${DEFAULT_SETTINGS_DIR}/defaultSettings.json"
 fi
 
 # ── Finalize app bundle (macOS) ──────────────────────────────────────────────

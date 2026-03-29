@@ -1,25 +1,47 @@
 import * as vscode from "vscode";
+import { LamiaChatProvider } from "./chatProvider";
 
 export function activate(context: vscode.ExtensionContext) {
-  const run = vscode.commands.registerCommand("lamia.run", () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !editor.document.fileName.endsWith(".lm")) {
-      vscode.window.showWarningMessage("Open a .lm file to run it");
-      return;
-    }
+  const chatProvider = new LamiaChatProvider(context);
 
-    const filePath = editor.document.fileName;
-    const workDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      LamiaChatProvider.viewType,
+      chatProvider,
+      { webviewOptions: { retainContextWhenHidden: true } }
+    )
+  );
 
-    const terminal =
-      vscode.window.terminals.find((t) => t.name === "Lamia") ??
-      vscode.window.createTerminal({ name: "Lamia", cwd: workDir });
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.openChat", () => {
+      vscode.commands.executeCommand("workbench.action.toggleAuxiliaryBar");
+    })
+  );
 
-    terminal.show();
-    terminal.sendText(`lamia "${filePath}"`);
-  });
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.run", () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !editor.document.fileName.endsWith(".lm")) {
+        vscode.window.showWarningMessage("Open a .lm file to run it");
+        return;
+      }
 
-  context.subscriptions.push(run);
+      const filePath = editor.document.fileName;
+      const workDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+      const terminal =
+        vscode.window.terminals.find((t) => t.name === "Lamia") ??
+        vscode.window.createTerminal({ name: "Lamia", cwd: workDir });
+
+      terminal.show();
+      terminal.sendText(`lamia "${filePath}"`);
+    })
+  );
+
+  // Open the secondary sidebar on startup so the chat is visible
+  setTimeout(() => {
+    vscode.commands.executeCommand("lamia.chatView.focus");
+  }, 1500);
 }
 
 export function deactivate() {}

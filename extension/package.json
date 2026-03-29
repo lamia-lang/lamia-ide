@@ -5,21 +5,35 @@
   "version": "0.1.0",
   "publisher": "lamia",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.105.0"
   },
-  "categories": ["Programming Languages", "Snippets"],
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "activationEvents": ["onStartupFinished"],
   "contributes": {
     "languages": [
       {
         "id": "lamia",
-        "aliases": ["Lamia", "lamia"],
-        "extensions": [".lm"],
+        "aliases": [
+          "Lamia",
+          "lamia"
+        ],
+        "extensions": [
+          ".lm"
+        ],
         "configuration": "./language-configuration-lm.json"
       },
       {
         "id": "lamia-prompt",
-        "aliases": ["Lamia Prompt", "Human Prompt"],
-        "extensions": [".hu"],
+        "aliases": [
+          "Lamia Prompt",
+          "Human Prompt"
+        ],
+        "extensions": [
+          ".hu"
+        ],
         "configuration": "./language-configuration-hu.json"
       }
     ],
@@ -44,7 +58,9 @@
     "taskDefinitions": [
       {
         "type": "lamia",
-        "required": ["file"],
+        "required": [
+          "file"
+        ],
         "properties": {
           "file": {
             "type": "string",
@@ -58,6 +74,10 @@
         "command": "lamia.run",
         "title": "Lamia: Run Current File",
         "icon": "$(play)"
+      },
+      {
+        "command": "lamia.openChat",
+        "title": "Lamia: Open Chat Panel"
       }
     ],
     "menus": {
@@ -75,8 +95,51 @@
         "key": "ctrl+shift+r",
         "mac": "cmd+shift+r",
         "when": "resourceExtname == .lm"
+      },
+      {
+        "command": "lamia.openChat",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "lamia-chat-container",
+          "title": "Lamia Chat",
+          "icon": "./icons/chat.svg"
+        }
+      ]
+    },
+    "views": {
+      "lamia-chat-container": [
+        {
+          "type": "webview",
+          "id": "lamia.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Lamia",
+      "properties": {
+        "lamia.cliPath": {
+          "type": "string",
+          "default": "lamia",
+          "description": "Path to the lamia CLI executable. Defaults to 'lamia' (must be on PATH)."
+        },
+        "lamia.chat.defaultAgent": {
+          "type": "string",
+          "default": "__builtin__",
+          "description": "Default chat agent. '__builtin__' uses the built-in Lamia Assistant."
+        },
+        "lamia.chat.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "description": "Milliseconds to wait for a lamia CLI response before timing out."
+        }
+      }
+    }
   },
   "main": "./out/extension.js",
   "scripts": {
@@ -84,6 +147,7 @@
     "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.3.0"
   }

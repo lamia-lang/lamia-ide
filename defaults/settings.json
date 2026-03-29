@@ -19,5 +19,6 @@
     "*.lm": "lamia-hybrid",
     "*.hu": "lamia-prompt"
   },
-  "telemetry.telemetryLevel": "off"
+  "telemetry.telemetryLevel": "off",
+  "workbench.secondarySideBar.defaultState": "open"
 }

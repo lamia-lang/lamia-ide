@@ -14,26 +14,37 @@ APP_NAME_COMPACT="$(echo "${APP_NAME}" | tr -d ' -' | tr '[:upper:]' '[:lower:]'
 APP_NAME_BUNDLE_ID="com.$(echo "${APP_NAME_SLUG}" | tr '-' '.')"
 
 # ── Detect platform ───────────────────────────────────────────────────────────
+# Override with TARGET_PLATFORM env var for cross-builds in CI (e.g. TARGET_PLATFORM=darwin-x64)
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
-case "${OS}" in
-    MINGW*|MSYS*|CYGWIN*)
-        PLATFORM="win32-x64" ; EXT="zip" ; OS="Windows" ;;
-    *)  ;;
-esac
-
-if [ "${OS}" != "Windows" ]; then
-    case "${OS}-${ARCH}" in
-        Darwin-arm64)  PLATFORM="darwin-arm64" ; EXT="zip" ;;
-        Darwin-x86_64) PLATFORM="darwin-x64"   ; EXT="zip" ;;
-        Linux-x86_64)  PLATFORM="linux-x64"    ; EXT="tar.gz" ;;
-        Linux-aarch64) PLATFORM="linux-arm64"  ; EXT="tar.gz" ;;
-        *)
-            echo "Unsupported platform: ${OS}-${ARCH}"
-            exit 1
-            ;;
+if [ -n "${TARGET_PLATFORM:-}" ]; then
+    PLATFORM="${TARGET_PLATFORM}"
+    case "${PLATFORM}" in
+        darwin-*)  EXT="zip" ; OS="Darwin" ;;
+        linux-*)   EXT="tar.gz" ; OS="Linux" ;;
+        win32-*)   EXT="zip" ; OS="Windows" ;;
+        *)         echo "Unknown TARGET_PLATFORM: ${PLATFORM}"; exit 1 ;;
     esac
+else
+    case "${OS}" in
+        MINGW*|MSYS*|CYGWIN*)
+            PLATFORM="win32-x64" ; EXT="zip" ; OS="Windows" ;;
+        *)  ;;
+    esac
+
+    if [ "${OS}" != "Windows" ]; then
+        case "${OS}-${ARCH}" in
+            Darwin-arm64)  PLATFORM="darwin-arm64" ; EXT="zip" ;;
+            Darwin-x86_64) PLATFORM="darwin-x64"   ; EXT="zip" ;;
+            Linux-x86_64)  PLATFORM="linux-x64"    ; EXT="tar.gz" ;;
+            Linux-aarch64) PLATFORM="linux-arm64"  ; EXT="tar.gz" ;;
+            *)
+                echo "Unsupported platform: ${OS}-${ARCH}"
+                exit 1
+                ;;
+        esac
+    fi
 fi
 
 ARTIFACT_NAME="LamiaStudio-${LAMIA_VERSION}-${PLATFORM}"

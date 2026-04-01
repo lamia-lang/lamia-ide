@@ -89,6 +89,7 @@ cp -R extension/icons                 "${LAMIA_EXT_DIR}/icons"
 cp    extension/lamia.code-snippets   "${LAMIA_EXT_DIR}/lamia.code-snippets"
 cp    extension/language-configuration-lm.json "${LAMIA_EXT_DIR}/language-configuration-lm.json"
 cp    extension/language-configuration-hu.json "${LAMIA_EXT_DIR}/language-configuration-hu.json"
+cp    models.json                              "${LAMIA_EXT_DIR}/models.json"
 
 # Register extension and clear any obsolete markers
 rm -f "${USER_EXT_BASE}/.obsolete"

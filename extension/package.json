@@ -128,14 +128,9 @@
           "default": "lamia",
           "description": "Path to the lamia CLI executable. Defaults to 'lamia' (must be on PATH)."
         },
-        "lamia.chat.defaultAgent": {
-          "type": "string",
-          "default": "__builtin__",
-          "description": "Default chat agent. '__builtin__' uses the built-in Lamia Assistant."
-        },
         "lamia.chat.timeoutMs": {
           "type": "number",
-          "default": 60000,
+          "default": 120000,
           "description": "Milliseconds to wait for a lamia CLI response before timing out."
         }
       }

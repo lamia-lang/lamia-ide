@@ -3,6 +3,7 @@ import { LamiaChatProvider } from "./chatProvider";
 
 export function activate(context: vscode.ExtensionContext) {
   const chatProvider = new LamiaChatProvider(context);
+  _chatProvider = chatProvider;
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -44,4 +45,8 @@ export function activate(context: vscode.ExtensionContext) {
   }, 1500);
 }
 
-export function deactivate() {}
+let _chatProvider: LamiaChatProvider | undefined;
+
+export function deactivate() {
+  _chatProvider?.dispose();
+}

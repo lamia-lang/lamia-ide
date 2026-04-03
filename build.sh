@@ -285,6 +285,24 @@ cp    extension/lamia.code-snippets    "${LAMIA_EXT_DIR}/lamia.code-snippets"
 cp    extension/language-configuration-lm.json  "${LAMIA_EXT_DIR}/language-configuration-lm.json"
 cp    extension/language-configuration-hu.json  "${LAMIA_EXT_DIR}/language-configuration-hu.json"
 cp    models.json                              "${LAMIA_EXT_DIR}/models.json"
+cp    lamia-version.txt                        "${LAMIA_EXT_DIR}/lamia-version.txt"
+
+# ── Bundle lamia wheels (with all dependencies for offline install) ────────
+LAMIA_PINNED_VERSION=$(cat lamia-version.txt | tr -d '[:space:]')
+LAMIA_WHEEL_DIR="${LAMIA_EXT_DIR}/lamia-wheels"
+mkdir -p "${LAMIA_WHEEL_DIR}"
+if ls lamia-wheels/*.whl 1>/dev/null 2>&1; then
+    echo "Bundling pre-downloaded lamia wheels..."
+    cp lamia-wheels/*.whl "${LAMIA_WHEEL_DIR}/"
+else
+    echo "Downloading lamia-lang==${LAMIA_PINNED_VERSION} + all dependencies..."
+    pip download --dest "${LAMIA_WHEEL_DIR}" "lamia-lang==${LAMIA_PINNED_VERSION}"
+fi
+# Verify wheels are actually there
+if ! ls "${LAMIA_WHEEL_DIR}"/*.whl 1>/dev/null 2>&1; then
+    echo "ERROR: No lamia wheels found — cannot build without them" >&2
+    exit 1
+fi
 
 # ── Apply in-app branding assets ─────────────────────────────────────────────
 echo "Applying in-app branding..."

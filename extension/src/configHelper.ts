@@ -13,15 +13,10 @@ interface ModelEntry {
 
 export type ModelList = Record<string, ModelEntry[]>;
 
-interface YamlModelChainEntry {
-  name?: string;
-  [key: string]: unknown;
-}
-
-interface YamlProviderConfig {
-  enabled?: boolean;
-  models?: (string | { name: string; [key: string]: unknown })[];
-  [key: string]: unknown;
+export interface SubProjectInfo {
+  name: string;
+  root: string;
+  configPath: string;
 }
 
 export function readProjectModels(): string[] {
@@ -37,30 +32,91 @@ export function readProjectModels(): string[] {
 }
 
 export function readAllProviderModels(): { chain: string[]; providerModels: Record<string, string[]> } {
-  const configPath = findConfigYaml();
-  if (!configPath) return { chain: [], providerModels: {} };
+  const configs = findAllConfigYamls();
+  const chain: string[] = [];
+  const providerModels: Record<string, string[]> = {};
+  const seen = new Set<string>();
+
+  for (const sub of configs) {
+    try {
+      const raw = fs.readFileSync(sub.configPath, "utf8");
+      for (const m of parseModelChain(raw)) {
+        if (!seen.has(m)) {
+          seen.add(m);
+          chain.push(m);
+        }
+      }
+      for (const [prov, models] of Object.entries(parseProviderModels(raw))) {
+        if (!providerModels[prov]) providerModels[prov] = [];
+        for (const m of models) {
+          if (!seen.has(m)) {
+            seen.add(m);
+            providerModels[prov].push(m);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return { chain, providerModels };
+}
+
+export function findAllConfigYamls(): SubProjectInfo[] {
+  const results: SubProjectInfo[] = [];
+  const visited = new Set<string>();
+
+  const folders = vscode.workspace.workspaceFolders;
+  if (folders) {
+    for (const folder of folders) {
+      walkForConfigs(folder.uri.fsPath, folder.name, results, visited, 4);
+    }
+  }
+
+  const globalConfig = path.join(LAMIA_HOME, "config.yaml");
+  if (fs.existsSync(globalConfig) && !visited.has(globalConfig)) {
+    results.push({ name: "global", root: LAMIA_HOME, configPath: globalConfig });
+  }
+
+  return results;
+}
+
+function walkForConfigs(
+  dir: string,
+  displayName: string,
+  results: SubProjectInfo[],
+  visited: Set<string>,
+  maxDepth: number
+): void {
+  if (maxDepth < 0) return;
+
+  const configPath = path.join(dir, "config.yaml");
+  if (fs.existsSync(configPath) && !visited.has(configPath)) {
+    visited.add(configPath);
+    results.push({ name: displayName, root: dir, configPath });
+    return;
+  }
+
+  if (maxDepth <= 0) return;
 
   try {
-    const raw = fs.readFileSync(configPath, "utf8");
-    const chain = parseModelChain(raw);
-    const providerModels = parseProviderModels(raw);
-    return { chain, providerModels };
-  } catch {
-    return { chain: [], providerModels: {} };
-  }
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "__pycache__" || entry.name === "venv") continue;
+      walkForConfigs(
+        path.join(dir, entry.name),
+        `${displayName}/${entry.name}`,
+        results,
+        visited,
+        maxDepth - 1
+      );
+    }
+  } catch {}
 }
 
 function findConfigYaml(): string | null {
-  const folders = vscode.workspace.workspaceFolders;
-  if (folders && folders.length > 0) {
-    const p = path.join(folders[0].uri.fsPath, "config.yaml");
-    if (fs.existsSync(p)) return p;
-  }
-
-  const global = path.join(LAMIA_HOME, "config.yaml");
-  if (fs.existsSync(global)) return global;
-
-  return null;
+  const configs = findAllConfigYamls();
+  return configs.length > 0 ? configs[0].configPath : null;
 }
 
 function parseModelChain(yamlContent: string): string[] {
@@ -224,8 +280,7 @@ export function buildModelDropdown(
     items.push({ value: m, label: humanLabel(m) });
   }
 
-  for (const [provider, models] of Object.entries(providerModels)) {
-    if (!configuredProviders.includes(provider)) continue;
+  for (const [, models] of Object.entries(providerModels)) {
     for (const m of models) {
       if (seen.has(m)) continue;
       seen.add(m);

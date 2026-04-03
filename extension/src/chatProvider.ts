@@ -17,6 +17,7 @@ import {
   listChats,
   loadChat,
 } from "./chatStore";
+import { NoPythonError } from "./lamiaInstaller";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,18 +121,26 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
   // ── Process lifecycle ──────────────────────────────────────────────────────
 
-  private _ensureProcess(): LamiaProcess {
+  private async _ensureProcess(): Promise<LamiaProcess> {
     if (this._process) return this._process;
 
-    const config = vscode.workspace.getConfiguration("lamia");
-    const cliPath = config.get<string>("cliPath", "lamia");
+    const cliPath = await LamiaProcess.resolveCliPath();
 
     ensureGlobalConfig();
-    const cwd = LamiaProcess.resolveWorkingDir();
+    const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
+    const cwd = LamiaProcess.resolveWorkingDirForFile(activeFile);
     const logFile = LamiaProcess.resolveLogFile();
 
     this._process = new LamiaProcess(cliPath, cwd, logFile);
     return this._process;
+  }
+
+  switchProjectIfNeeded(filePath: string): void {
+    if (!this._process) return;
+    const newCwd = LamiaProcess.resolveWorkingDirForFile(filePath);
+    if (newCwd !== this._process.cwd) {
+      this._process.restart(newCwd);
+    }
   }
 
   // ── Message handling ───────────────────────────────────────────────────────
@@ -169,7 +178,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       case "send": {
         this._post({ type: "thinking", active: true });
         try {
-          const proc = this._ensureProcess();
+          const proc = await this._ensureProcess();
 
           const userMsg: ChatMessage = {
             role: "user",
@@ -211,7 +220,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             this._post({ type: "error", text: response.message || "Unknown error" });
           }
         } catch (err: any) {
-          this._post({ type: "error", text: err.message });
+          if (err instanceof NoPythonError) {
+            this._post({
+              type: "error",
+              text: "Python 3.10+ is not installed. The chat and code execution require Python. "
+                + "Please install Python and restart the IDE.",
+            });
+          } else {
+            this._post({ type: "error", text: err.message });
+          }
         } finally {
           this._post({ type: "thinking", active: false });
         }

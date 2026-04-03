@@ -4,6 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 import { spawn, ChildProcess } from "child_process";
 import { getApiKey } from "./envHelper";
+import { ensureLamia } from "./lamiaInstaller";
 
 export interface LamiaResponse {
   type: "response" | "error" | "ready";
@@ -28,16 +29,22 @@ export class LamiaProcess {
   private _onReady: (() => void) | null = null;
   private _readyPromise: Promise<void>;
   private _disposed = false;
+  private _cwd: string;
 
   constructor(
-    private readonly _cliPath: string,
-    private readonly _cwd: string,
+    private _cliPath: string,
+    cwd: string,
     private readonly _logFile: string
   ) {
+    this._cwd = cwd;
     this._readyPromise = new Promise((resolve) => {
       this._onReady = resolve;
     });
     this._spawn();
+  }
+
+  get cwd(): string {
+    return this._cwd;
   }
 
   private _spawn(): void {
@@ -143,7 +150,8 @@ export class LamiaProcess {
     return this._ready;
   }
 
-  restart(): void {
+  restart(newCwd?: string): void {
+    if (newCwd) this._cwd = newCwd;
     if (this._proc) {
       this._proc.kill("SIGTERM");
       this._proc = null;
@@ -153,6 +161,10 @@ export class LamiaProcess {
       this._onReady = resolve;
     });
     this._spawn();
+  }
+
+  updateCliPath(newPath: string): void {
+    this._cliPath = newPath;
   }
 
   dispose(): void {
@@ -167,14 +179,22 @@ export class LamiaProcess {
     }
   }
 
-  static resolveWorkingDir(): string {
+  static resolveWorkingDirForFile(filePath?: string): string {
+    if (filePath) {
+      const projectRoot = findNearestConfigDir(filePath);
+      if (projectRoot) return projectRoot;
+    }
+
     const folders = vscode.workspace.workspaceFolders;
     if (folders && folders.length > 0) {
       const root = folders[0].uri.fsPath;
       if (fs.existsSync(path.join(root, "config.yaml"))) {
         return root;
       }
+      const sub = findFirstConfigInTree(root, 3);
+      if (sub) return sub;
     }
+
     fs.mkdirSync(LAMIA_HOME, { recursive: true });
     return LAMIA_HOME;
   }
@@ -184,4 +204,40 @@ export class LamiaProcess {
     fs.mkdirSync(logsDir, { recursive: true });
     return path.join(logsDir, "lamia-chat.log");
   }
+
+  static async resolveCliPath(): Promise<string> {
+    const config = vscode.workspace.getConfiguration("lamia");
+    const userPath = config.get<string>("cliPath", "");
+    if (userPath) return userPath;
+
+    return ensureLamia();
+  }
+}
+
+function findNearestConfigDir(filePath: string): string | null {
+  let dir = path.dirname(filePath);
+  const root = path.parse(dir).root;
+  while (dir !== root) {
+    if (fs.existsSync(path.join(dir, "config.yaml"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function findFirstConfigInTree(root: string, maxDepth: number): string | null {
+  if (maxDepth < 0) return null;
+  if (fs.existsSync(path.join(root, "config.yaml"))) return root;
+
+  try {
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "__pycache__") continue;
+      const found = findFirstConfigInTree(path.join(root, entry.name), maxDepth - 1);
+      if (found) return found;
+    }
+  } catch {}
+  return null;
 }

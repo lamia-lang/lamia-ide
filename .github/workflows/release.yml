@@ -64,6 +64,17 @@ jobs:
           name: icons
           path: branding/icons/
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download lamia wheels (with all dependencies)
+        shell: bash
+        run: |
+          LAMIA_VER=$(cat lamia-version.txt | tr -d '[:space:]')
+          mkdir -p lamia-wheels
+          pip download --dest lamia-wheels "lamia-lang==${LAMIA_VER}" || true
+
       - name: Build
         shell: bash
         env:

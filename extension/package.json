@@ -1,7 +1,7 @@
 {
-  "name": "lamia-language",
-  "displayName": "Lamia Language",
-  "description": "Syntax highlighting, snippets, and run support for the Lamia language (.lm, .hu files)",
+  "name": "lamia-ide",
+  "displayName": "Lamia Studio",
+  "description": "IDE for the Lamia programming language with chat, syntax highlighting, and code execution",
   "version": "0.1.0",
   "publisher": "lamia",
   "engines": {

@@ -79,8 +79,12 @@ rm -rf "${EXTENSIONS_DIR}/lamia-language" 2>/dev/null || true
 echo "Applying extension..."
 APP_NAME_SLUG="$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
 USER_EXT_BASE="${HOME}/.${APP_NAME_SLUG}/extensions"
-LAMIA_EXT_DIR="${USER_EXT_BASE}/lamia.lamia-language-0.1.0"
-rm -rf "${LAMIA_EXT_DIR}"
+EXT_NAME=$(python3 -c "import json; print(json.load(open('extension/package.json'))['name'])")
+EXT_VER=$(python3 -c "import json; print(json.load(open('extension/package.json'))['version'])")
+EXT_PUBLISHER=$(python3 -c "import json; print(json.load(open('extension/package.json'))['publisher'])")
+EXT_ID="${EXT_PUBLISHER}.${EXT_NAME}-${EXT_VER}"
+LAMIA_EXT_DIR="${USER_EXT_BASE}/${EXT_ID}"
+rm -rf "${USER_EXT_BASE}/${EXT_PUBLISHER}.${EXT_NAME}-"* 2>/dev/null || true
 mkdir -p "${LAMIA_EXT_DIR}"
 cp -R extension/out/                  "${LAMIA_EXT_DIR}/out/"
 cp    extension/package.json          "${LAMIA_EXT_DIR}/package.json"
@@ -94,12 +98,12 @@ cp    lamia-version.txt                        "${LAMIA_EXT_DIR}/lamia-version.t
 
 # Register extension and clear any obsolete markers
 rm -f "${USER_EXT_BASE}/.obsolete"
-cat > "${USER_EXT_BASE}/extensions.json" << 'EXTJSON'
+cat > "${USER_EXT_BASE}/extensions.json" << EXTJSON
 [{
-  "identifier": {"id": "lamia.lamia-language"},
-  "version": "0.1.0",
-  "location": {"$mid": 1, "path": "lamia.lamia-language-0.1.0", "scheme": "file"},
-  "relativeLocation": "lamia.lamia-language-0.1.0",
+  "identifier": {"id": "${EXT_PUBLISHER}.${EXT_NAME}"},
+  "version": "${EXT_VER}",
+  "location": {"\$mid": 1, "path": "${EXT_ID}", "scheme": "file"},
+  "relativeLocation": "${EXT_ID}",
   "metadata": {"installedTimestamp": 0}
 }]
 EXTJSON

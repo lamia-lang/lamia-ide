@@ -18,11 +18,7 @@ function bundledVersionFile(): string {
 }
 
 function readPinnedVersion(): string {
-  try {
-    return fs.readFileSync(bundledVersionFile(), "utf8").trim();
-  } catch {
-    return "0.1.0";
-  }
+  return fs.readFileSync(bundledVersionFile(), "utf8").trim();
 }
 
 function readInstalledVersion(): string | null {

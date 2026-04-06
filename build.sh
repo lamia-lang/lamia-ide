@@ -273,7 +273,7 @@ fi
 echo "Compiling extension..."
 (cd extension && npm install --prefer-offline --silent && ./node_modules/.bin/tsc -p ./)
 echo "Bundling Lamia extension..."
-LAMIA_EXT_DIR="${EXTENSIONS_DIR}/lamia-language"
+LAMIA_EXT_DIR="${EXTENSIONS_DIR}/lamia-ide"
 mkdir -p "${LAMIA_EXT_DIR}"
 # Copy only the runtime files — skip src, node_modules, tsconfig
 cp -R extension/out                    "${LAMIA_EXT_DIR}/out"

@@ -238,7 +238,7 @@ export function ensureGlobalConfig(): void {
   fs.writeFileSync(globalConfig, lines.join("\n"), "utf8");
 }
 
-const MODELS_URL = "https://raw.githubusercontent.com/LamiaOrg/lamia-ide/main/models.json";
+const MODELS_URL = "https://raw.githubusercontent.com/lamia-lang/lamia-ide/main/models.json";
 
 let _cachedFallbackModels: ModelList | undefined;
 

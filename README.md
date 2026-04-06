@@ -1,17 +1,17 @@
 # Lamia Studio
 
-A lightweight IDE for the [Lamia](https://github.com/LamiaOrg/lamia) programming language, built on VSCodium.
+A lightweight IDE for the [Lamia](https://github.com/lamia-lang/lamia) programming language, built on VSCodium.
 
-[![Release](https://img.shields.io/github/v/release/LamiaOrg/lamia-ide?label=Download&style=for-the-badge)](https://github.com/LamiaOrg/lamia-ide/releases/latest)
+[![Release](https://img.shields.io/github/v/release/lamia-lang/lamia-ide?label=Download&style=for-the-badge)](https://github.com/lamia-lang/lamia-ide/releases/latest)
 
 ## Install
 
 | Platform | Download | Notes |
 |---|---|---|
-| **macOS** (Apple Silicon) | [`LamiaStudio-*-darwin-arm64.dmg`](https://github.com/LamiaOrg/lamia-ide/releases/latest) | See [macOS instructions](#macos) below |
-| **macOS** (Intel) | [`LamiaStudio-*-darwin-x64.dmg`](https://github.com/LamiaOrg/lamia-ide/releases/latest) | See [macOS instructions](#macos) below |
-| **Linux** (x64) | [`LamiaStudio-*-linux-x64.tar.gz`](https://github.com/LamiaOrg/lamia-ide/releases/latest) | Extract and run |
-| **Windows** (x64) | [`LamiaStudio-*-win32-x64.zip`](https://github.com/LamiaOrg/lamia-ide/releases/latest) | See [Windows instructions](#windows) below |
+| **macOS** (Apple Silicon) | [`LamiaStudio-*-darwin-arm64.dmg`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [macOS instructions](#macos) below |
+| **macOS** (Intel) | [`LamiaStudio-*-darwin-x64.dmg`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [macOS instructions](#macos) below |
+| **Linux** (x64) | [`LamiaStudio-*-linux-x64.tar.gz`](https://github.com/lamia-lang/lamia-ide/releases/latest) | Extract and run |
+| **Windows** (x64) | [`LamiaStudio-*-win32-x64.zip`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [Windows instructions](#windows) below |
 
 ### Prerequisites
 
@@ -75,7 +75,7 @@ pip install Pillow
 Then build:
 
 ```bash
-git clone https://github.com/LamiaOrg/lamia-ide.git
+git clone https://github.com/lamia-lang/lamia-ide.git
 cd lamia-ide
 ./build.sh
 ```

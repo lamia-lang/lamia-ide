@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { LamiaChatProvider } from "./chatProvider";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
+import { startWatching } from "./fileContext";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -14,6 +15,8 @@ export function activate(context: vscode.ExtensionContext) {
   } else {
     showNoPythonWarning();
   }
+
+  startWatching(context);
 
   const chatProvider = new LamiaChatProvider(context);
   _chatProvider = chatProvider;

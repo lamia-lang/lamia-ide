@@ -18,13 +18,17 @@ import {
   loadChat,
 } from "./chatStore";
 import { NoPythonError } from "./lamiaInstaller";
+import { getChatConfigPath, writeSelectedModel, readSelectedModel, ensureChatConfig } from "./chatConfig";
+import { filterFiles } from "./fileContext";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type WebviewMessage =
-  | { type: "send"; message: string; model: string }
+  | { type: "send"; message: string; model: string; files?: string[] }
+  | { type: "changeModel"; model: string }
   | { type: "saveApiKey"; provider: string; key: string }
   | { type: "insertSnippet"; code: string }
+  | { type: "getFiles"; query: string }
   | { type: "ready" }
   | { type: "newChat" }
   | { type: "loadChat"; id: string };
@@ -37,30 +41,19 @@ type HostMessage =
       type: "init";
       models: { value: string; label: string }[];
       configuredProviders: string[];
+      selectedModel: string | null;
       messages: ChatMessage[];
       chatTitle: string;
+    }
+  | {
+      type: "fileList";
+      files: { name: string; relativePath: string; absolutePath: string }[];
     };
 
-// ── Lamia context for syntax questions ───────────────────────────────────────
-
-const LAMIA_CONTEXT = `You are a Lamia language assistant. Lamia is a Python-like language for AI/LLM orchestration.
-Key syntax:
-  - Agent call:       result = function_name(<params>) -> JSON[Model]
-  - Pydantic model:   class MyModel(BaseModel): field: str = Field(description="what should be written in this field by the LLM")
-  - Plain text call:  result = function_name(<params>)
-  - Prompt template:  .hu files use {variable} and {@filename} placeholders, they are plain text LLM instructions. The filename is the function name for .hu functions
-  - Function naming:  function names must be unique in the whole lamia project (in the .lm files). That applies to the .hu file names because they are also functions.
-  - File location:    Place .lm and .hu files in the folders with semantic names and nesting. Group the semantically related files in the same folder.
-  - f-string prompt:  prompt = f"Instruction. Input: {variable}"
-  - Model chain:      config.yaml defines ordered fallback models use the config.yaml of your project as how to generate it. If the user does not mention desired models choose the models that will be the best for the project.
-  - Imports:          Imports are needed only for python libraries. They are not needed for lamia functions.
-Always respond with Lamia syntax examples when the question is about Lamia. Never plain Python.`;
-
-const LAMIA_KEYWORDS = [
-  "lamia", ".lm", ".hu", "agent", "model_chain", "model chain",
-  "prompt template", "basemodel", "pydantic", "config.yaml",
-  "-> json", "field(", "lamia studio",
-];
+const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
+  "If the user asks about Lamia syntax, .lm files, .hu files, config.yaml, model chains, or Lamia-specific features, " +
+  "use your tools to look up the relevant documentation before answering. " +
+  "When writing Lamia code, use Lamia syntax — not plain Python.";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,11 +62,6 @@ function getNonce(): string {
   let r = "";
   for (let i = 0; i < 32; i++) r += chars[Math.floor(Math.random() * chars.length)];
   return r;
-}
-
-function isLamiaRelatedKeyword(message: string): boolean {
-  const lower = message.toLowerCase();
-  return LAMIA_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────────
@@ -127,11 +115,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     const cliPath = await LamiaProcess.resolveCliPath();
 
     ensureGlobalConfig();
+    ensureChatConfig();
     const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
     const cwd = LamiaProcess.resolveWorkingDirForFile(activeFile);
     const logFile = LamiaProcess.resolveLogFile();
+    const configPath = getChatConfigPath();
 
-    this._process = new LamiaProcess(cliPath, cwd, logFile);
+    this._process = new LamiaProcess(cliPath, cwd, logFile, configPath);
     return this._process;
   }
 
@@ -150,6 +140,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       case "ready":
         await this._sendInit();
         break;
+
+      case "changeModel": {
+        writeSelectedModel(message.model);
+        if (this._process) {
+          this._process.restart();
+        }
+        break;
+      }
 
       case "saveApiKey": {
         setApiKey(message.provider, message.key);
@@ -188,15 +186,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           this._chat.messages.push(userMsg);
           saveChat(this._chat);
 
-          let system: string | undefined;
-
-          if (isLamiaRelatedKeyword(message.message)) {
-            system = LAMIA_CONTEXT;
-          } else {
-            system = await this._classifyWithLlm(proc, message.message);
-          }
-
-          const response = await proc.send(message.message, system);
+          const files = message.files && message.files.length > 0 ? message.files : undefined;
+          const response = await proc.send(message.message, { system: SYSTEM_HINT, files });
 
           if (response.type === "response" && response.text) {
             const assistantMsg: ChatMessage = {
@@ -235,6 +226,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         break;
       }
 
+      case "getFiles": {
+        const files = filterFiles(message.query).slice(0, 50).map(f => ({
+          name: f.name,
+          relativePath: f.relativePath,
+          absolutePath: f.absolutePath,
+        }));
+        this._post({ type: "fileList", files });
+        break;
+      }
+
       case "insertSnippet": {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -247,26 +248,6 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // ── LLM-based Lamia context classifier ─────────────────────────────────────
-
-  private async _classifyWithLlm(proc: LamiaProcess, message: string): Promise<string | undefined> {
-    try {
-      const classifyPrompt =
-        `Classify the following user message. Reply with ONLY the single word "lamia" if the message is asking about the Lamia programming language, Lamia syntax, .lm files, .hu files, lamia config, or Lamia-specific features. Reply with ONLY the single word "general" if it is a general programming question, a generic AI question, or anything not specific to Lamia.\n\nUser message: "${message.slice(0, 300)}"`;
-
-      const result = await proc.send(classifyPrompt);
-      if (result.type === "response" && result.text) {
-        const answer = result.text.trim().toLowerCase();
-        if (answer.includes("lamia")) {
-          return LAMIA_CONTEXT;
-        }
-      }
-    } catch {
-      // classifier failed — don't inject context
-    }
-    return undefined;
-  }
-
   // ── Init ───────────────────────────────────────────────────────────────────
 
   private async _sendInit(): Promise<void> {
@@ -275,10 +256,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     const fallback = await fetchFallbackModels();
     const models = buildModelDropdown(chain, providerModels, fallback, configuredProviders);
 
+    const selectedModel = readSelectedModel();
+
     this._post({
       type: "init",
       models,
       configuredProviders,
+      selectedModel,
       messages: this._chat.messages,
       chatTitle: this._chat.title,
     });
@@ -454,6 +438,57 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     #send-btn:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
     #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    /* ── @-mention popup ──────────────────────────────────────────────── */
+    #input-wrapper { position: relative; }
+    #mention-popup {
+      position: absolute; bottom: 100%; left: 0; right: 0;
+      max-height: 160px; overflow-y: auto;
+      background: var(--vscode-dropdown-background);
+      border: 1px solid var(--vscode-dropdown-border);
+      border-radius: 4px; z-index: 10;
+    }
+    #mention-popup.hidden { display: none; }
+    .mention-item {
+      padding: 4px 8px; font-size: 12px; cursor: pointer;
+      display: flex; justify-content: space-between;
+    }
+    .mention-item:hover, .mention-item.active {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .mention-item .path { opacity: 0.5; font-size: 10px; }
+
+    /* ── File chips ───────────────────────────────────────────────────── */
+    #file-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 4px 0; }
+    #file-chips:empty { display: none; }
+    .file-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+      border-radius: 3px; padding: 2px 6px; font-size: 11px;
+    }
+    .file-chip .remove {
+      cursor: pointer; opacity: 0.6; font-size: 10px;
+    }
+    .file-chip .remove:hover { opacity: 1; }
+
+    /* ── Code block actions ────────────────────────────────────────────── */
+    .code-block-wrapper { position: relative; margin: 6px 0; }
+    .code-block-wrapper pre {
+      margin: 0; padding: 8px; border-radius: 4px;
+      background: var(--vscode-textCodeBlock-background);
+      overflow-x: auto; font-size: 12px;
+    }
+    .code-actions {
+      position: absolute; top: 4px; right: 4px;
+      display: flex; gap: 4px;
+    }
+    .code-actions button {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none; border-radius: 3px; padding: 2px 8px;
+      font-size: 10px; cursor: pointer; opacity: 0.7;
+    }
+    .code-actions button:hover { opacity: 1; }
+
     /* ── Empty state ───────────────────────────────────────────────────── */
     #empty-state {
       display: flex; flex-direction: column; align-items: center;
@@ -501,9 +536,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
   <!-- Input -->
   <div id="input-area">
-    <textarea id="user-input" rows="3" placeholder="Ask anything... (Ctrl+Enter to send)"></textarea>
+    <div id="file-chips"></div>
+    <div id="input-wrapper">
+      <textarea id="user-input" rows="3" placeholder="Ask anything... @ to reference files (Ctrl+Enter to send)"></textarea>
+      <div id="mention-popup" class="hidden"></div>
+    </div>
     <div id="input-footer">
-      <span id="input-hint">Ctrl+Enter to send</span>
+      <span id="input-hint">Ctrl+Enter to send &middot; @ to attach files &middot; drop files here</span>
       <button id="send-btn">Send &#8594;</button>
     </div>
   </div>
@@ -552,9 +591,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     // ── Model dropdown ────────────────────────────────────────────────────
 
-    function populateModels() {
+    function populateModels(serverSelectedModel) {
       const sel = document.getElementById("model-select");
-      const prev = sel.value || (vscodeApi.getState() || {}).selectedModel || "";
+      const prev = serverSelectedModel || sel.value || (vscodeApi.getState() || {}).selectedModel || "";
       sel.innerHTML = "";
 
       let hasOptions = false;
@@ -612,7 +651,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
-      persistSelection();
+      return wrapper;
     }
 
     function showThinking() {
@@ -663,34 +702,175 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       }
 
       appendMessage("user", text, undefined);
+      const filePaths = attachedFiles.map(f => f.absolutePath);
+      attachedFiles = [];
+      renderFileChips();
       input.value = "";
       input.style.height = "";
       document.getElementById("send-btn").disabled = true;
-      vscodeApi.postMessage({ type: "send", message: text, model });
+      vscodeApi.postMessage({ type: "send", message: text, model, files: filePaths.length > 0 ? filePaths : undefined });
     }
 
     // ── State ─────────────────────────────────────────────────────────────
 
-    function persistSelection() {
-      vscodeApi.setState({ selectedModel: document.getElementById("model-select")?.value });
+    function onModelChange() {
+      const model = document.getElementById("model-select")?.value;
+      if (model) {
+        vscodeApi.postMessage({ type: "changeModel", model });
+        vscodeApi.setState({ selectedModel: model });
+      }
+    }
+
+    // ── File chips (attached files) ────────────────────────────────────────
+
+    let attachedFiles = [];
+
+    function addFileChip(file) {
+      if (attachedFiles.some(f => f.absolutePath === file.absolutePath)) return;
+      attachedFiles.push(file);
+      renderFileChips();
+    }
+
+    function removeFileChip(idx) {
+      attachedFiles.splice(idx, 1);
+      renderFileChips();
+    }
+
+    function renderFileChips() {
+      const container = document.getElementById("file-chips");
+      container.innerHTML = "";
+      attachedFiles.forEach((f, i) => {
+        const chip = document.createElement("span");
+        chip.className = "file-chip";
+        chip.textContent = f.name;
+        const rm = document.createElement("span");
+        rm.className = "remove";
+        rm.textContent = "\\u00d7";
+        rm.addEventListener("click", () => removeFileChip(i));
+        chip.appendChild(rm);
+        container.appendChild(chip);
+      });
+    }
+
+    // ── @-mention popup ────────────────────────────────────────────────────
+
+    let mentionFiles = [];
+    let mentionIdx = 0;
+    let mentionStart = -1;
+
+    function showMentionPopup(files) {
+      mentionFiles = files;
+      mentionIdx = 0;
+      const popup = document.getElementById("mention-popup");
+      popup.innerHTML = "";
+      files.forEach((f, i) => {
+        const item = document.createElement("div");
+        item.className = "mention-item" + (i === 0 ? " active" : "");
+        item.innerHTML = '<span>' + f.name + '</span><span class="path">' + f.relativePath + '</span>';
+        item.addEventListener("click", () => selectMention(f));
+        popup.appendChild(item);
+      });
+      popup.classList.remove("hidden");
+    }
+
+    function hideMentionPopup() {
+      document.getElementById("mention-popup").classList.add("hidden");
+      mentionFiles = [];
+      mentionStart = -1;
+    }
+
+    function selectMention(file) {
+      addFileChip(file);
+      const input = document.getElementById("user-input");
+      const val = input.value;
+      input.value = val.slice(0, mentionStart) + val.slice(input.selectionStart);
+      hideMentionPopup();
+      input.focus();
+    }
+
+    // ── Code block rendering ───────────────────────────────────────────────
+
+    function renderCodeBlocks(el) {
+      const codeBlockRegex = /\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g;
+      const html = el.innerHTML;
+      el.innerHTML = html.replace(codeBlockRegex, function(match, lang, code) {
+        return '<div class="code-block-wrapper">' +
+          '<div class="code-actions">' +
+          '<button class="copy-btn" data-code="' + code.replace(/"/g, '&quot;') + '">Copy</button>' +
+          '<button class="insert-btn" data-code="' + code.replace(/"/g, '&quot;') + '">Insert</button>' +
+          '</div>' +
+          '<pre><code>' + code.replace(/</g, '&lt;') + '</code></pre></div>';
+      });
+      el.querySelectorAll(".copy-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          navigator.clipboard.writeText(btn.dataset.code);
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+        });
+      });
+      el.querySelectorAll(".insert-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          vscodeApi.postMessage({ type: "insertSnippet", code: btn.dataset.code });
+        });
+      });
     }
 
     // ── Event wiring ──────────────────────────────────────────────────────
 
     document.getElementById("settings-btn").addEventListener("click", toggleSetup);
-    document.getElementById("model-select").addEventListener("change", persistSelection);
+    document.getElementById("model-select").addEventListener("change", onModelChange);
     document.getElementById("setup-provider").addEventListener("change", onProviderChange);
     document.getElementById("save-key-btn").addEventListener("click", saveApiKey);
     document.getElementById("send-btn").addEventListener("click", sendMessage);
 
-    document.getElementById("user-input").addEventListener("keydown", function(e) {
+    const userInput = document.getElementById("user-input");
+
+    userInput.addEventListener("keydown", function(e) {
+      if (mentionFiles.length > 0) {
+        if (e.key === "ArrowDown") { e.preventDefault(); mentionIdx = Math.min(mentionIdx + 1, mentionFiles.length - 1); updateMentionActive(); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); mentionIdx = Math.max(mentionIdx - 1, 0); updateMentionActive(); return; }
+        if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); selectMention(mentionFiles[mentionIdx]); return; }
+        if (e.key === "Escape") { hideMentionPopup(); return; }
+      }
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendMessage(); }
     });
 
-    document.getElementById("user-input").addEventListener("input", function() {
+    function updateMentionActive() {
+      const items = document.getElementById("mention-popup").querySelectorAll(".mention-item");
+      items.forEach((it, i) => it.classList.toggle("active", i === mentionIdx));
+    }
+
+    userInput.addEventListener("input", function() {
       this.style.height = "auto";
       this.style.height = Math.min(this.scrollHeight, 140) + "px";
+
+      const val = this.value;
+      const cursor = this.selectionStart;
+      const before = val.slice(0, cursor);
+      const atIdx = before.lastIndexOf("@");
+
+      if (atIdx >= 0 && (atIdx === 0 || before[atIdx - 1] === " " || before[atIdx - 1] === "\\n")) {
+        const query = before.slice(atIdx + 1);
+        if (query.length <= 40 && !query.includes(" ")) {
+          mentionStart = atIdx;
+          vscodeApi.postMessage({ type: "getFiles", query });
+          return;
+        }
+      }
+      hideMentionPopup();
     });
+
+    // ── Drag and drop ──────────────────────────────────────────────────────
+
+    const inputArea = document.getElementById("input-area");
+    inputArea.addEventListener("dragover", (e) => { e.preventDefault(); inputArea.style.outline = "2px dashed var(--vscode-focusBorder)"; });
+    inputArea.addEventListener("dragleave", () => { inputArea.style.outline = ""; });
+    inputArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      inputArea.style.outline = "";
+    });
+
+    // ── Message listener ───────────────────────────────────────────────────
 
     window.addEventListener("message", event => {
       const msg = event.data;
@@ -698,7 +878,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         case "init":
           allModels = msg.models;
           configuredProviders = msg.configuredProviders;
-          populateModels();
+          populateModels(msg.selectedModel);
           updateSetupStatus();
           clearMessages();
           restoreMessages(msg.messages);
@@ -708,10 +888,12 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             document.getElementById("setup-panel").classList.add("hidden");
           }
           break;
-        case "response":
-          appendMessage("assistant", msg.text, msg.model || undefined);
+        case "response": {
+          const el = appendMessage("assistant", msg.text, msg.model || undefined);
+          if (el) renderCodeBlocks(el.querySelector(".message-bubble"));
           document.getElementById("send-btn").disabled = false;
           break;
+        }
         case "error":
           appendMessage("error", msg.text, undefined);
           document.getElementById("send-btn").disabled = false;
@@ -719,6 +901,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         case "thinking":
           if (msg.active) showThinking();
           else removeThinking();
+          break;
+        case "fileList":
+          if (msg.files.length > 0) showMentionPopup(msg.files);
+          else hideMentionPopup();
           break;
       }
     });

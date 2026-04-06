@@ -34,7 +34,8 @@ export class LamiaProcess {
   constructor(
     private _cliPath: string,
     cwd: string,
-    private readonly _logFile: string
+    private readonly _logFile: string,
+    private _configPath?: string
   ) {
     this._cwd = cwd;
     this._readyPromise = new Promise((resolve) => {
@@ -65,11 +66,16 @@ export class LamiaProcess {
 
     fs.mkdirSync(path.dirname(this._logFile), { recursive: true });
 
-    this._proc = spawn(
-      this._cliPath,
-      ["--json", "--log-level", "DEBUG", "--log-file", this._logFile],
-      { cwd: this._cwd, env: envVars, stdio: ["pipe", "pipe", "pipe"] }
-    );
+    const args = ["--json", "--log-level", "DEBUG", "--log-file", this._logFile];
+    if (this._configPath) {
+      args.push("--config", this._configPath);
+    }
+
+    this._proc = spawn(this._cliPath, args, {
+      cwd: this._cwd,
+      env: envVars,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     this._proc.stdout!.on("data", (chunk: Buffer) => this._onData(chunk));
     this._proc.stderr!.on("data", () => {});
@@ -127,13 +133,14 @@ export class LamiaProcess {
     }
   }
 
-  async send(text: string, system?: string): Promise<LamiaResponse> {
+  async send(text: string, options?: { system?: string; files?: string[] }): Promise<LamiaResponse> {
     if (this._disposed) throw new Error("LamiaProcess is disposed");
 
     if (!this._ready) await this._readyPromise;
 
-    const request: Record<string, string> = { text };
-    if (system) request.system = system;
+    const request: Record<string, unknown> = { text };
+    if (options?.system) request.system = options.system;
+    if (options?.files && options.files.length > 0) request.files = options.files;
 
     return new Promise<LamiaResponse>((resolve, reject) => {
       this._queue.push({ resolve, reject });

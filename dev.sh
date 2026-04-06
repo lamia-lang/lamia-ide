@@ -183,14 +183,10 @@ if [ -f defaults/settings.json ]; then
     echo "  OK"
 fi
 
-# ── Re-sign (macOS only, ad-hoc) ──────────────────────────────────────────────
 if [ "${OS}" = "Darwin" ]; then
     echo "Re-signing..."
-    find "${APP_BUNDLE}" -name "*.dylib" -exec codesign --force --sign - {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}/Contents/Frameworks" -maxdepth 1 -type d -name "*.app" \
-        -exec codesign --force --sign - {} \; 2>/dev/null || true
-    codesign --force --sign - "${APP_BUNDLE}" 2>/dev/null || true
     xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
+    codesign --force --sign - "${APP_BUNDLE}" 2>/dev/null || true
     echo "  OK"
 fi
 

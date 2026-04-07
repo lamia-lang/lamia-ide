@@ -37,6 +37,7 @@ type HostMessage =
   | { type: "response"; text: string; model?: string }
   | { type: "error"; text: string }
   | { type: "thinking"; active: boolean }
+  | { type: "toolProgress"; tool: string; label: string }
   | {
       type: "init";
       models: { value: string; label: string }[];
@@ -53,7 +54,21 @@ type HostMessage =
 const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
   "If the user asks about Lamia syntax, .lm files, .hu files, config.yaml, model chains, or Lamia-specific features, " +
   "use your tools to look up the relevant documentation before answering. " +
-  "When writing Lamia code, use Lamia syntax — not plain Python.";
+  "When writing Lamia code, use Lamia syntax - not plain Python.";
+
+const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
+  get_docs:    { verb: "Reading docs",  argKey: "topic" },
+  read_file:   { verb: "Reading file",  argKey: "path" },
+  list_files:  { verb: "Listing files", argKey: "directory" },
+  write_file:  { verb: "Writing file",  argKey: "path" },
+};
+
+function toolProgressLabel(tool: string, args: Record<string, unknown>): string {
+  const def = TOOL_LABELS[tool];
+  if (!def) return `Using tool: ${tool}`;
+  const detail = def.argKey && args[def.argKey] ? String(args[def.argKey]) : "";
+  return detail ? `${def.verb}: ${detail}` : def.verb;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -187,7 +202,17 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           saveChat(this._chat);
 
           const files = message.files && message.files.length > 0 ? message.files : undefined;
-          const response = await proc.send(message.message, { system: SYSTEM_HINT, files });
+          const response = await proc.send(message.message, {
+            system: SYSTEM_HINT,
+            files,
+            onToolUse: (tool, args) => {
+              this._post({
+                type: "toolProgress",
+                tool,
+                label: toolProgressLabel(tool, args),
+              });
+            },
+          });
 
           if (response.type === "response" && response.text) {
             const assistantMsg: ChatMessage = {
@@ -489,6 +514,30 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
     .code-actions button:hover { opacity: 1; }
 
+    /* ── Tool progress ──────────────────────────────────────────────────── */
+    .tool-progress {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 4px 10px;
+    }
+    .tool-step {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; opacity: 0.7; line-height: 1.4;
+    }
+    .tool-step .ts-spinner {
+      width: 12px; height: 12px; flex-shrink: 0;
+      border: 1.5px solid var(--vscode-foreground);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      opacity: 0.5;
+    }
+    .tool-step .ts-check {
+      flex-shrink: 0; font-size: 12px;
+      color: var(--vscode-charts-green, #4ec);
+      opacity: 0.7;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* ── Empty state ───────────────────────────────────────────────────── */
     #empty-state {
       display: flex; flex-direction: column; align-items: center;
@@ -686,6 +735,51 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         if (msg.tokens) meta += (meta ? " | " : "") + msg.tokens.input + "/" + msg.tokens.output + " tokens";
         appendMessage(msg.role, msg.text, meta || undefined);
       }
+    }
+
+    // ── Tool progress ──────────────────────────────────────────────────────
+
+    let toolProgressEl = null;
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    function addToolProgress(label) {
+      hideEmptyState();
+      removeThinking();
+
+      const container = document.getElementById("chat-messages");
+
+      if (!toolProgressEl) {
+        toolProgressEl = document.createElement("div");
+        toolProgressEl.className = "tool-progress";
+        container.appendChild(toolProgressEl);
+      }
+
+      toolProgressEl.querySelectorAll(".ts-spinner").forEach(function(s) {
+        const check = document.createElement("span");
+        check.className = "ts-check";
+        check.textContent = "\\u2713";
+        s.replaceWith(check);
+      });
+
+      const step = document.createElement("div");
+      step.className = "tool-step";
+      step.innerHTML = '<span class="ts-spinner"></span><span>' + escapeHtml(label) + '</span>';
+      toolProgressEl.appendChild(step);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function completeToolProgress() {
+      if (!toolProgressEl) return;
+      toolProgressEl.querySelectorAll(".ts-spinner").forEach(function(s) {
+        const check = document.createElement("span");
+        check.className = "ts-check";
+        check.textContent = "\\u2713";
+        s.replaceWith(check);
+      });
+      toolProgressEl = null;
     }
 
     // ── Send ──────────────────────────────────────────────────────────────
@@ -888,13 +982,18 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             document.getElementById("setup-panel").classList.add("hidden");
           }
           break;
+        case "toolProgress":
+          addToolProgress(msg.label);
+          break;
         case "response": {
+          completeToolProgress();
           const el = appendMessage("assistant", msg.text, msg.model || undefined);
           if (el) renderCodeBlocks(el.querySelector(".message-bubble"));
           document.getElementById("send-btn").disabled = false;
           break;
         }
         case "error":
+          completeToolProgress();
           appendMessage("error", msg.text, undefined);
           document.getElementById("send-btn").disabled = false;
           break;

@@ -132,10 +132,12 @@ function parseModelChain(yamlContent: string): string[] {
     }
     if (inModelChain) {
       if (trimmed.startsWith("- name:")) {
-        const name = trimmed.replace("- name:", "").trim().replace(/^["']|["']$/g, "");
+        const raw = trimmed.replace("- name:", "").trim().replace(/^["']|["']$/g, "");
+        const name = stripComment(raw);
         if (name) models.push(name);
       } else if (trimmed.startsWith("- ") && !trimmed.includes(":")) {
-        const name = trimmed.slice(2).trim().replace(/^["']|["']$/g, "");
+        const raw = trimmed.slice(2).trim().replace(/^["']|["']$/g, "");
+        const name = stripComment(raw);
         if (name) models.push(name);
       } else if (trimmed && !trimmed.startsWith("-") && !trimmed.startsWith("#") && !trimmed.startsWith("max_retries") && !trimmed.startsWith("temperature")) {
         if (!trimmed.startsWith(" ") && !trimmed.startsWith("\t")) {
@@ -180,10 +182,12 @@ function parseProviderModels(yamlContent: string): Record<string, string[]> {
 
       if (inModels && trimmed.startsWith("- ")) {
         if (trimmed.startsWith("- name:")) {
-          const name = trimmed.replace("- name:", "").trim().replace(/^["']|["']$/g, "");
+          const raw = trimmed.replace("- name:", "").trim().replace(/^["']|["']$/g, "");
+          const name = stripComment(raw);
           if (name) result[currentProvider].push(`${currentProvider}:${name}`);
         } else {
-          const name = trimmed.slice(2).trim().replace(/^["']|["']$/g, "");
+          const raw = trimmed.slice(2).trim().replace(/^["']|["']$/g, "");
+          const name = stripComment(raw);
           if (name) result[currentProvider].push(`${currentProvider}:${name}`);
         }
         continue;
@@ -267,25 +271,25 @@ export async function fetchFallbackModels(): Promise<ModelList> {
 
 export function buildModelDropdown(
   projectModels: string[],
-  providerModels: Record<string, string[]>,
+  _providerModels: Record<string, string[]>,
   fallbackModels: ModelList,
   configuredProviders: string[]
 ): { value: string; label: string }[] {
   const seen = new Set<string>();
   const items: { value: string; label: string }[] = [];
 
+  const fallbackLabelMap = new Map<string, string>();
+  for (const [provider, models] of Object.entries(fallbackModels)) {
+    for (const model of models) {
+      fallbackLabelMap.set(`${provider}:${model.id}`, modelLabel(model.label, provider));
+    }
+  }
+
   for (const m of projectModels) {
     if (seen.has(m)) continue;
     seen.add(m);
-    items.push({ value: m, label: humanLabel(m) });
-  }
-
-  for (const [, models] of Object.entries(providerModels)) {
-    for (const m of models) {
-      if (seen.has(m)) continue;
-      seen.add(m);
-      items.push({ value: m, label: humanLabel(m) });
-    }
+    const friendly = fallbackLabelMap.get(m);
+    items.push({ value: m, label: friendly || humanLabel(m) });
   }
 
   for (const [provider, models] of Object.entries(fallbackModels)) {
@@ -308,8 +312,13 @@ function modelLabel(label: string, provider: string): string {
 
 function humanLabel(providerModel: string): string {
   const parts = providerModel.split(":");
-  if (parts.length < 2) return providerModel;
-  const model = parts.slice(1).join(":");
+  if (parts.length < 2) return stripComment(providerModel);
+  const model = stripComment(parts.slice(1).join(":"));
   const provider = parts[0];
   return provider === "ollama" ? `${model} (ollama)` : model;
+}
+
+function stripComment(s: string): string {
+  const idx = s.indexOf("#");
+  return idx >= 0 ? s.slice(0, idx).trim() : s.trim();
 }

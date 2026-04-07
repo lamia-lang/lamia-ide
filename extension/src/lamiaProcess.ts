@@ -17,6 +17,7 @@ export interface LamiaResponse {
 type PendingRequest = {
   resolve: (value: LamiaResponse) => void;
   reject: (err: Error) => void;
+  onToolUse?: (tool: string, args: Record<string, unknown>) => void;
 };
 
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
@@ -107,6 +108,14 @@ export class LamiaProcess {
         continue;
       }
 
+      if ((msg as any).type === "tool_use") {
+        const head = this._queue[0];
+        if (head?.onToolUse) {
+          head.onToolUse((msg as any).tool ?? "", (msg as any).args ?? {});
+        }
+        continue;
+      }
+
       const pending = this._queue.shift();
       if (pending) pending.resolve(msg);
     }
@@ -133,7 +142,14 @@ export class LamiaProcess {
     }
   }
 
-  async send(text: string, options?: { system?: string; files?: string[] }): Promise<LamiaResponse> {
+  async send(
+    text: string,
+    options?: {
+      system?: string;
+      files?: string[];
+      onToolUse?: (tool: string, args: Record<string, unknown>) => void;
+    },
+  ): Promise<LamiaResponse> {
     if (this._disposed) throw new Error("LamiaProcess is disposed");
 
     if (!this._ready) await this._readyPromise;
@@ -143,7 +159,7 @@ export class LamiaProcess {
     if (options?.files && options.files.length > 0) request.files = options.files;
 
     return new Promise<LamiaResponse>((resolve, reject) => {
-      this._queue.push({ resolve, reject });
+      this._queue.push({ resolve, reject, onToolUse: options?.onToolUse });
       try {
         this._proc!.stdin!.write(JSON.stringify(request) + "\n", "utf8");
       } catch (err: any) {

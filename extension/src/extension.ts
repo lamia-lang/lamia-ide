@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { LamiaChatProvider } from "./chatProvider";
+import { LamiaDefinitionProvider } from "./definitionProvider";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
 import { startWatching } from "./fileContext";
 
@@ -17,6 +18,12 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   startWatching(context);
+
+  const defProvider = new LamiaDefinitionProvider();
+  context.subscriptions.push(
+    vscode.languages.registerDefinitionProvider({ language: "lamia" }, defProvider),
+    vscode.languages.registerDefinitionProvider({ language: "lamia-prompt" }, defProvider),
+  );
 
   const chatProvider = new LamiaChatProvider(context);
   _chatProvider = chatProvider;

@@ -5,6 +5,7 @@
   "patterns": [
     { "include": "#lamia-call" },
     { "include": "#lamia-arrow" },
+    { "include": "#lamia-arrow-general" },
     { "include": "#docstring" },
     { "include": "#comment" },
     { "include": "#string-triple-double" },
@@ -15,9 +16,11 @@
     { "include": "#keywords" },
     { "include": "#builtins" },
     { "include": "#constants" },
+    { "include": "#pydantic" },
     { "include": "#function-def" },
     { "include": "#class-def" },
     { "include": "#decorator" },
+    { "include": "#function-call" },
     { "include": "#type-hint" },
     { "include": "#number" },
     { "include": "#operator" }
@@ -43,14 +46,22 @@
       }
     },
     "lamia-arrow": {
-      "comment": "Lamia arrow operator in multi-line calls",
-      "match": "(->)\\s*(JSON)(\\[)([A-Z][a-zA-Z0-9_]*)(\\])",
+      "comment": "Lamia arrow with typed model: -> JSON[ModelName]",
+      "match": "(->)\\s*(JSON|CSV)(\\[)([A-Z][a-zA-Z0-9_]*)(\\])",
       "captures": {
         "1": { "name": "keyword.operator.arrow.lamia" },
-        "2": { "name": "storage.type.json.lamia" },
+        "2": { "name": "storage.type.lamia" },
         "3": { "name": "punctuation.bracket.open.lamia" },
         "4": { "name": "entity.name.type.model.lamia" },
         "5": { "name": "punctuation.bracket.close.lamia" }
+      }
+    },
+    "lamia-arrow-general": {
+      "comment": "Lamia arrow with return type: -> HTML, -> TEXT, -> File(...), etc.",
+      "match": "(->)\\s*(JSON|HTML|TEXT|XML|YAML|CSV|Markdown|File)\\b",
+      "captures": {
+        "1": { "name": "keyword.operator.arrow.lamia" },
+        "2": { "name": "storage.type.lamia" }
       }
     },
     "lamia-kwarg": {
@@ -58,6 +69,29 @@
       "captures": {
         "1": { "name": "variable.parameter.function.lamia" },
         "2": { "name": "keyword.operator.assignment.python" }
+      }
+    },
+    "pydantic": {
+      "patterns": [
+        {
+          "comment": "Pydantic Field() call",
+          "match": "\\b(Field)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "support.function.pydantic.python" }
+          }
+        },
+        {
+          "comment": "Pydantic/dataclass model bases and validators",
+          "match": "\\b(BaseModel|BaseSettings|ConfigDict|field_validator|model_validator|validator|computed_field)\\b",
+          "name": "support.class.pydantic.python"
+        }
+      ]
+    },
+    "function-call": {
+      "comment": "General function/method calls: foo(, bar.baz(",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.python" }
       }
     },
     "docstring": {
@@ -116,7 +150,7 @@
       "name": "keyword.control.python"
     },
     "builtins": {
-      "match": "\\b(print|len|range|str|int|float|list|dict|tuple|set|bool|None|True|False|isinstance|type|super|enumerate|zip|map|filter|sorted|open|any|all|sum|min|max|abs|round|hasattr|getattr|setattr)\\b",
+      "match": "\\b(print|len|range|str|int|float|list|dict|tuple|set|bool|isinstance|type|super|enumerate|zip|map|filter|sorted|open|any|all|sum|min|max|abs|round|hasattr|getattr|setattr)\\b",
       "name": "support.function.builtin.python"
     },
     "constants": {
@@ -142,7 +176,7 @@
       "name": "meta.decorator.python"
     },
     "type-hint": {
-      "match": "\\b(str|int|float|bool|list|dict|tuple|set|Path|Optional|Type|BaseModel)\\b",
+      "match": "\\b(str|int|float|bool|list|dict|tuple|set|Path|Optional|Union|Type|Any|List|Dict|Tuple|Set|Callable|BaseModel)\\b",
       "name": "support.type.python"
     },
     "number": {

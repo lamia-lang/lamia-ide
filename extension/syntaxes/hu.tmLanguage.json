@@ -3,19 +3,31 @@
   "scopeName": "text.lamia.prompt",
   "fileTypes": ["hu"],
   "patterns": [
+    { "include": "#file-reference" },
     { "include": "#variable" },
     { "include": "#heading" },
     { "include": "#list-item" },
     { "include": "#emphasis" },
+    { "include": "#code-block" },
     { "include": "#code-inline" }
   ],
   "repository": {
-    "variable": {
-      "comment": "Template variables like {prd_content}, {specs}",
-      "match": "\\{([a-z_][a-z0-9_]*)\\}",
-      "name": "variable.other.placeholder.lamia",
+    "file-reference": {
+      "comment": "File context references: {@resume.pdf}, {@config}",
+      "match": "(\\{)(@[^}]+)(\\})",
       "captures": {
-        "1": { "name": "variable.other.readwrite.lamia" }
+        "1": { "name": "punctuation.definition.variable.begin.lamia" },
+        "2": { "name": "entity.name.tag.file-reference.lamia" },
+        "3": { "name": "punctuation.definition.variable.end.lamia" }
+      }
+    },
+    "variable": {
+      "comment": "Template variables: {prd_content}, {specs}",
+      "match": "(\\{)([a-z_][a-z0-9_]*)(\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.variable.begin.lamia" },
+        "2": { "name": "variable.other.readwrite.lamia" },
+        "3": { "name": "punctuation.definition.variable.end.lamia" }
       }
     },
     "heading": {
@@ -26,12 +38,17 @@
       }
     },
     "list-item": {
-      "match": "^\\s*(-|\\d+\\.)\\s+",
+      "match": "^\\s*(-|\\*|\\d+\\.)\\s+",
       "name": "punctuation.definition.list.markdown"
     },
     "emphasis": {
       "match": "\\*\\*([^*]+)\\*\\*",
       "name": "markup.bold.markdown"
+    },
+    "code-block": {
+      "begin": "^\\s*```",
+      "end": "^\\s*```",
+      "name": "markup.fenced_code.block.markdown"
     },
     "code-inline": {
       "match": "`([^`]+)`",

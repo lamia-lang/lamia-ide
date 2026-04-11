@@ -120,6 +120,52 @@
         }
       ]
     },
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": "entity.name.function.agent.lamia",
+            "settings": { "foreground": "#DCDCAA", "fontStyle": "bold" }
+          },
+          {
+            "scope": "entity.name.function.call.python",
+            "settings": { "foreground": "#DCDCAA" }
+          },
+          {
+            "scope": "support.function.pydantic.python",
+            "settings": { "foreground": "#C586C0" }
+          },
+          {
+            "scope": "support.class.pydantic.python",
+            "settings": { "foreground": "#4EC9B0" }
+          },
+          {
+            "scope": "storage.type.lamia",
+            "settings": { "foreground": "#569CD6", "fontStyle": "bold" }
+          },
+          {
+            "scope": "entity.name.type.model.lamia",
+            "settings": { "foreground": "#4EC9B0" }
+          },
+          {
+            "scope": "keyword.operator.arrow.lamia",
+            "settings": { "foreground": "#569CD6" }
+          },
+          {
+            "scope": "variable.other.readwrite.lamia",
+            "settings": { "foreground": "#9CDCFE" }
+          },
+          {
+            "scope": "entity.name.tag.file-reference.lamia",
+            "settings": { "foreground": "#CE9178", "fontStyle": "italic" }
+          },
+          {
+            "scope": "meta.decorator.python",
+            "settings": { "foreground": "#DCDCAA" }
+          }
+        ]
+      }
+    },
     "configuration": {
       "title": "Lamia",
       "properties": {

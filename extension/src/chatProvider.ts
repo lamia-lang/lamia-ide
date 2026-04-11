@@ -36,7 +36,7 @@ type WebviewMessage =
   | { type: "loadChat"; id: string };
 
 type HostMessage =
-  | { type: "response"; text: string; model?: string }
+  | { type: "response"; text: string; model?: string; tokens?: { input: number; output: number } }
   | { type: "error"; text: string }
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
@@ -228,7 +228,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             };
             this._chat.messages.push(assistantMsg);
             saveChat(this._chat);
-            this._post({ type: "response", text: response.text, model: response.model });
+            this._post({ type: "response", text: response.text, model: response.model, tokens: response.tokens });
 
             if (response.files && response.files.length > 0) {
               this._post({
@@ -678,7 +678,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     let allModels = [];
     let configuredProviders = [];
 
-    // ── Setup / Settings ──────────────────────────────────────────────────
+    function formatMeta(model, tokens) {
+      let meta = "";
+      if (model) meta += model;
+      if (tokens) {
+        meta += (meta ? " | " : "") + (tokens.input || 0).toLocaleString() + " in / " + (tokens.output || 0).toLocaleString() + " out tokens";
+      }
+      return meta;
+    }
+
+    // ── Setup / Settings ────────────────────────────────────────────────── 
 
     function toggleSetup() {
       const panel = document.getElementById("setup-panel");
@@ -806,9 +815,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     function restoreMessages(messages) {
       if (!messages || messages.length === 0) return;
       for (const msg of messages) {
-        let meta = "";
-        if (msg.model) meta += msg.model;
-        if (msg.tokens) meta += (meta ? " | " : "") + msg.tokens.input + "/" + msg.tokens.output + " tokens";
+        const meta = formatMeta(msg.model, msg.tokens);
         appendMessage(msg.role, msg.text, meta || undefined);
       }
     }
@@ -1114,7 +1121,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "response": {
           completeToolProgress();
-          const el = appendMessage("assistant", msg.text, msg.model || undefined);
+          const meta = formatMeta(msg.model, msg.tokens);
+          const el = appendMessage("assistant", msg.text, meta || undefined);
           if (el) renderCodeBlocks(el.querySelector(".message-bubble"));
           document.getElementById("send-btn").disabled = false;
           break;

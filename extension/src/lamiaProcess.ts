@@ -6,12 +6,20 @@ import { spawn, ChildProcess } from "child_process";
 import { getApiKey } from "./envHelper";
 import { ensureLamia } from "./lamiaInstaller";
 
+export interface FileWrite {
+  path: string;
+  action: "create" | "modify";
+  content: string;
+  original?: string;
+}
+
 export interface LamiaResponse {
   type: "response" | "error" | "ready";
   text?: string;
   message?: string;
   model?: string;
   tokens?: { input: number; output: number; total: number };
+  files?: FileWrite[];
 }
 
 type PendingRequest = {

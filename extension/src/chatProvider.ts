@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { LamiaProcess } from "./lamiaProcess";
+import { LamiaProcess, FileWrite } from "./lamiaProcess";
 import { setApiKey, getConfiguredProviders } from "./envHelper";
 import {
   readAllProviderModels,
@@ -29,6 +29,8 @@ type WebviewMessage =
   | { type: "saveApiKey"; provider: string; key: string }
   | { type: "insertSnippet"; code: string }
   | { type: "getFiles"; query: string }
+  | { type: "openFile"; path: string }
+  | { type: "openDiff"; path: string; original: string }
   | { type: "ready" }
   | { type: "newChat" }
   | { type: "loadChat"; id: string };
@@ -38,6 +40,7 @@ type HostMessage =
   | { type: "error"; text: string }
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
+  | { type: "fileChanges"; files: { path: string; action: string; original?: string }[] }
   | {
       type: "init";
       models: { value: string; label: string }[];
@@ -86,6 +89,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private _process: LamiaProcess | null = null;
   private _chat: Chat;
+  private _lastFileWrites: FileWrite[] = [];
 
   constructor(private readonly _context: vscode.ExtensionContext) {
     this._chat = loadLatestChat() || newChat();
@@ -225,6 +229,18 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             this._chat.messages.push(assistantMsg);
             saveChat(this._chat);
             this._post({ type: "response", text: response.text, model: response.model });
+
+            if (response.files && response.files.length > 0) {
+              this._post({
+                type: "fileChanges",
+                files: response.files.map(f => ({
+                  path: f.path,
+                  action: f.action,
+                  original: f.original,
+                })),
+              });
+              this._lastFileWrites = response.files;
+            }
           } else if (response.type === "error") {
             const errorMsg: ChatMessage = {
               role: "error",
@@ -268,6 +284,32 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           return;
         }
         editor.insertSnippet(new vscode.SnippetString((message as any).code));
+        break;
+      }
+
+      case "openFile": {
+        const uri = vscode.Uri.file(message.path);
+        vscode.commands.executeCommand("vscode.open", uri);
+        break;
+      }
+
+      case "openDiff": {
+        const filePath = message.path;
+        const original = message.original;
+        const fs = await import("fs");
+        const os = await import("os");
+        const path = await import("path");
+
+        const tmpFile = path.join(
+          os.tmpdir(),
+          `lamia-orig-${Date.now()}-${path.basename(filePath)}`
+        );
+        fs.writeFileSync(tmpFile, original, "utf8");
+
+        const origUri = vscode.Uri.file(tmpFile);
+        const modUri = vscode.Uri.file(filePath);
+        const title = `${path.basename(filePath)} (before \u2194 after)`;
+        vscode.commands.executeCommand("vscode.diff", origUri, modUri, title);
         break;
       }
     }
@@ -538,6 +580,40 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── File changes ───────────────────────────────────────────────────── */
+    .file-changes {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 6px 10px;
+    }
+    .file-change-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; padding: 4px 8px;
+      border-radius: 4px;
+      background: var(--vscode-editor-inactiveSelectionBackground, rgba(255,255,255,0.04));
+    }
+    .file-change-item .fc-icon {
+      flex-shrink: 0; font-size: 13px; opacity: 0.8;
+    }
+    .file-change-item .fc-icon.create {
+      color: var(--vscode-charts-green, #4ec);
+    }
+    .file-change-item .fc-icon.modify {
+      color: var(--vscode-charts-yellow, #ee0);
+    }
+    .file-change-item .fc-name {
+      flex: 1; min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+      opacity: 0.85;
+    }
+    .file-change-item .fc-btn {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none; border-radius: 3px;
+      padding: 2px 8px; font-size: 10px;
+      cursor: pointer; opacity: 0.7; white-space: nowrap;
+    }
+    .file-change-item .fc-btn:hover { opacity: 1; }
+
     /* ── Empty state ───────────────────────────────────────────────────── */
     #empty-state {
       display: flex; flex-direction: column; align-items: center;
@@ -782,6 +858,54 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       toolProgressEl = null;
     }
 
+    // ── File changes ────────────────────────────────────────────────────
+
+    function renderFileChanges(files) {
+      const container = document.getElementById("chat-messages");
+      const wrapper = document.createElement("div");
+      wrapper.className = "file-changes";
+
+      files.forEach(function(f) {
+        var basename = f.path.split("/").pop() || f.path;
+        var item = document.createElement("div");
+        item.className = "file-change-item";
+
+        var icon = document.createElement("span");
+        icon.className = "fc-icon " + f.action;
+        icon.textContent = f.action === "create" ? "+" : "\\u270e";
+        item.appendChild(icon);
+
+        var name = document.createElement("span");
+        name.className = "fc-name";
+        name.title = f.path;
+        name.textContent = (f.action === "create" ? "Created: " : "Modified: ") + basename;
+        item.appendChild(name);
+
+        if (f.action === "modify" && f.original != null) {
+          var diffBtn = document.createElement("button");
+          diffBtn.className = "fc-btn";
+          diffBtn.textContent = "View Diff";
+          diffBtn.addEventListener("click", function() {
+            vscodeApi.postMessage({ type: "openDiff", path: f.path, original: f.original });
+          });
+          item.appendChild(diffBtn);
+        }
+
+        var openBtn = document.createElement("button");
+        openBtn.className = "fc-btn";
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", function() {
+          vscodeApi.postMessage({ type: "openFile", path: f.path });
+        });
+        item.appendChild(openBtn);
+
+        wrapper.appendChild(item);
+      });
+
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+    }
+
     // ── Send ──────────────────────────────────────────────────────────────
 
     function sendMessage() {
@@ -984,6 +1108,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "toolProgress":
           addToolProgress(msg.label);
+          break;
+        case "fileChanges":
+          renderFileChanges(msg.files);
           break;
         case "response": {
           completeToolProgress();

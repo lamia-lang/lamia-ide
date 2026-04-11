@@ -2,6 +2,7 @@
   "reportIssueUrl": "https://github.com/user/lamia-ide/issues",
   "documentationUrl": "https://github.com/user/lamia/blob/main/README.md",
   "enableTelemetry": false,
+  "updateUrl": "",
   "announcementsUrl": "",
   "releaseNotesUrl": "",
   "checksums": {}

@@ -3,6 +3,7 @@ import { LamiaChatProvider } from "./chatProvider";
 import { LamiaDefinitionProvider } from "./definitionProvider";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
 import { startWatching } from "./fileContext";
+import { setLastCopied } from "./clipboardStore";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -59,6 +60,26 @@ export function activate(context: vscode.ExtensionContext) {
 
       terminal.show();
       terminal.sendText(`lamia "${filePath}"`);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.trackCopy", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor && !editor.selection.isEmpty) {
+        const sel = editor.selection;
+        const text = editor.document.getText(sel);
+        const filePath = editor.document.uri.fsPath;
+        const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
+        setLastCopied({
+          text,
+          filePath,
+          fileName,
+          startLine: sel.start.line + 1,
+          endLine: sel.end.line + 1,
+        });
+      }
+      await vscode.commands.executeCommand("editor.action.clipboardCopyAction");
     })
   );
 

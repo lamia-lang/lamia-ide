@@ -20,15 +20,17 @@ import {
 import { NoPythonError } from "./lamiaInstaller";
 import { getChatConfigPath, writeSelectedModel, readSelectedModel, ensureChatConfig } from "./chatConfig";
 import { filterFiles } from "./fileContext";
+import { getLastCopied, clearLastCopied, CopiedSnippet } from "./clipboardStore";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type WebviewMessage =
-  | { type: "send"; message: string; model: string; files?: string[] }
+  | { type: "send"; message: string; model: string; files?: string[]; snippets?: CopiedSnippet[] }
   | { type: "changeModel"; model: string }
   | { type: "saveApiKey"; provider: string; key: string }
   | { type: "insertSnippet"; code: string }
   | { type: "getFiles"; query: string }
+  | { type: "getClipboardContext" }
   | { type: "openFile"; path: string }
   | { type: "openDiff"; path: string; original: string }
   | { type: "ready" }
@@ -37,6 +39,7 @@ type WebviewMessage =
 
 type HostMessage =
   | { type: "response"; text: string; model?: string; tokens?: { input: number; output: number } }
+  | { type: "clipboardContext"; snippet: CopiedSnippet | null }
   | { type: "error"; text: string }
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
@@ -71,6 +74,22 @@ function toolProgressLabel(tool: string, args: Record<string, unknown>): string 
   if (!def) return `Using tool: ${tool}`;
   const detail = def.argKey && args[def.argKey] ? String(args[def.argKey]) : "";
   return detail ? `${def.verb}: ${detail}` : def.verb;
+}
+
+function buildSnippetPrefix(snippets: CopiedSnippet[] | undefined): string {
+  if (!snippets || snippets.length === 0) return "";
+  return snippets
+    .map((s) => {
+      const lineInfo = s.startLine === s.endLine
+        ? `line ${s.startLine}`
+        : `lines ${s.startLine}-${s.endLine}`;
+      return [
+        `<copied_snippet file="${s.filePath}" ${lineInfo}>`,
+        s.text,
+        "</copied_snippet>",
+      ].join("\n");
+    })
+    .join("\n\n");
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -206,7 +225,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           saveChat(this._chat);
 
           const files = message.files && message.files.length > 0 ? message.files : undefined;
-          const response = await proc.send(message.message, {
+          const snippetPrefix = buildSnippetPrefix(message.snippets);
+          const llmMessage = snippetPrefix ? `${snippetPrefix}\n\n${message.message}` : message.message;
+          const response = await proc.send(llmMessage, {
             system: SYSTEM_HINT,
             files,
             onToolUse: (tool, args) => {
@@ -274,6 +295,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           absolutePath: f.absolutePath,
         }));
         this._post({ type: "fileList", files });
+        break;
+      }
+
+      case "getClipboardContext": {
+        const snippet = getLastCopied();
+        clearLastCopied();
+        this._post({ type: "clipboardContext", snippet: snippet ?? null });
         break;
       }
 
@@ -536,6 +564,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       cursor: pointer; opacity: 0.6; font-size: 10px;
     }
     .file-chip .remove:hover { opacity: 1; }
+    .snippet-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--vscode-editorInfo-background, rgba(0,122,204,0.18));
+      color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-focusBorder, rgba(0,122,204,0.4));
+      border-radius: 3px; padding: 2px 6px; font-size: 11px;
+    }
+    .snippet-chip .remove { cursor: pointer; opacity: 0.6; font-size: 10px; }
+    .snippet-chip .remove:hover { opacity: 1; }
 
     /* ── Code block actions ────────────────────────────────────────────── */
     .code-block-wrapper { position: relative; margin: 6px 0; }
@@ -928,12 +965,20 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
       appendMessage("user", text, undefined);
       const filePaths = attachedFiles.map(f => f.absolutePath);
+      const snippets = attachedSnippets.slice();
       attachedFiles = [];
+      attachedSnippets = [];
       renderFileChips();
       input.value = "";
       input.style.height = "";
       document.getElementById("send-btn").disabled = true;
-      vscodeApi.postMessage({ type: "send", message: text, model, files: filePaths.length > 0 ? filePaths : undefined });
+      vscodeApi.postMessage({
+        type: "send",
+        message: text,
+        model,
+        files: filePaths.length > 0 ? filePaths : undefined,
+        snippets: snippets.length > 0 ? snippets : undefined,
+      });
     }
 
     // ── State ─────────────────────────────────────────────────────────────
@@ -949,6 +994,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     // ── File chips (attached files) ────────────────────────────────────────
 
     let attachedFiles = [];
+    let attachedSnippets = [];
 
     function addFileChip(file) {
       if (attachedFiles.some(f => f.absolutePath === file.absolutePath)) return;
@@ -958,6 +1004,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     function removeFileChip(idx) {
       attachedFiles.splice(idx, 1);
+      renderFileChips();
+    }
+
+    function addSnippetChip(snippet) {
+      attachedSnippets.push(snippet);
+      renderFileChips();
+    }
+
+    function removeSnippetChip(idx) {
+      attachedSnippets.splice(idx, 1);
       renderFileChips();
     }
 
@@ -972,6 +1028,18 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         rm.className = "remove";
         rm.textContent = "\\u00d7";
         rm.addEventListener("click", () => removeFileChip(i));
+        chip.appendChild(rm);
+        container.appendChild(chip);
+      });
+      attachedSnippets.forEach((s, i) => {
+        const chip = document.createElement("span");
+        chip.className = "snippet-chip";
+        const lines = s.startLine === s.endLine ? ":" + s.startLine : ":" + s.startLine + "-" + s.endLine;
+        chip.textContent = s.fileName + lines;
+        const rm = document.createElement("span");
+        rm.className = "remove";
+        rm.textContent = "\\u00d7";
+        rm.addEventListener("click", () => removeSnippetChip(i));
         chip.appendChild(rm);
         container.appendChild(chip);
       });
@@ -1085,6 +1153,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       hideMentionPopup();
     });
 
+    userInput.addEventListener("paste", function() {
+      vscodeApi.postMessage({ type: "getClipboardContext" });
+    });
+
     // ── Drag and drop ──────────────────────────────────────────────────────
 
     const inputArea = document.getElementById("input-area");
@@ -1139,6 +1211,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         case "fileList":
           if (msg.files.length > 0) showMentionPopup(msg.files);
           else hideMentionPopup();
+          break;
+        case "clipboardContext":
+          if (msg.snippet) addSnippetChip(msg.snippet);
           break;
       }
     });

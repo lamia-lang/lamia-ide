@@ -78,6 +78,10 @@
       {
         "command": "lamia.openChat",
         "title": "Lamia: Open Chat Panel"
+      },
+      {
+        "command": "lamia.trackCopy",
+        "title": "Lamia: Track Copied Snippet"
       }
     ],
     "menus": {
@@ -100,6 +104,12 @@
         "command": "lamia.openChat",
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l"
+      },
+      {
+        "command": "lamia.trackCopy",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "editorTextFocus && editorHasSelection"
       }
     ],
     "viewsContainers": {
@@ -121,10 +131,6 @@
       ]
     },
     "configurationDefaults": {
-      "update.mode": "none",
-      "update.showReleaseNotes": false,
-      "extensions.autoCheckUpdates": false,
-      "extensions.autoUpdate": false,
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {

@@ -4,14 +4,32 @@ A lightweight IDE for the [Lamia](https://github.com/lamia-lang/lamia) programmi
 
 [![Release](https://img.shields.io/github/v/release/lamia-lang/lamia-ide?label=Download&style=for-the-badge)](https://github.com/lamia-lang/lamia-ide/releases/latest)
 
-## Install
+## Building from Source (Recommended for macOS & Windows)
+
+Building locally is the easiest way to get started on **macOS** and **Windows** — it avoids Gatekeeper / SmartScreen warnings entirely since the app is built on your machine.
+
+**Prerequisites:** [Node.js](https://nodejs.org/) and [Python 3.10+](https://www.python.org/downloads/)
+
+```bash
+git clone https://github.com/lamia-lang/lamia-ide.git
+cd lamia-ide
+./build.sh
+```
+
+On macOS the output is a DMG in `dist/out/`. On Windows it produces a ZIP. Since you built it locally, no code-signing warnings will appear.
+
+> **Note:** Icons and branding assets are pre-built and included in the repository. [Pillow](https://pillow.readthedocs.io/) is only needed if you want to regenerate them from the source design files (`pip install Pillow && python3 scripts/generate-icons.py`).
+
+## Pre-built Releases
+
+Pre-built binaries are available for all platforms. On **Linux** this is the recommended approach (no signing issues). On macOS and Windows the binaries work but require a one-time workaround for unsigned-app warnings — see below.
 
 | Platform | Download | Notes |
 |---|---|---|
-| **macOS** (Apple Silicon) | [`LamiaStudio-*-darwin-arm64.dmg`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [macOS instructions](#macos) below |
-| **macOS** (Intel) | [`LamiaStudio-*-darwin-x64.dmg`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [macOS instructions](#macos) below |
+| **macOS** (Apple Silicon) | [`LamiaStudio-*-darwin-arm64.dmg`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [macOS](#macos) below |
+| **macOS** (Intel) | [`LamiaStudio-*-darwin-x64.dmg`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [macOS](#macos) below |
 | **Linux** (x64) | [`LamiaStudio-*-linux-x64.tar.gz`](https://github.com/lamia-lang/lamia-ide/releases/latest) | Extract and run |
-| **Windows** (x64) | [`LamiaStudio-*-win32-x64.zip`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [Windows instructions](#windows) below |
+| **Windows** (x64) | [`LamiaStudio-*-win32-x64.zip`](https://github.com/lamia-lang/lamia-ide/releases/latest) | See [Windows](#windows) below |
 
 ### Prerequisites
 
@@ -29,8 +47,6 @@ Lamia Studio is not notarized (no Apple Developer license — this is an open-so
 3. Now open Lamia Studio normally — it will work from here on
 
 Alternatively, right-click the app → **Open** → click **Open** in the dialog. This also creates a permanent Gatekeeper exception, but may need to be done twice.
-
-If you prefer, you can [build from source](#building-from-source) instead — that avoids the Gatekeeper issue entirely since the app is built on your machine.
 
 ### Windows
 
@@ -59,28 +75,6 @@ cd LamiaStudio-*
 | `extension/` | VS Code extension: `.lm` / `.hu` syntax highlighting, chat, run button, lamia CLI integration |
 | `branding/` | Custom product name, icons, welcome page |
 | `defaults/` | Beginner-friendly `settings.json` shipped out of the box |
-
-## Building from Source
-
-Building from source is the recommended approach for macOS users who don't want to deal with Gatekeeper warnings.
-
-**Prerequisites:**
-- [Node.js](https://nodejs.org/) (for compiling the extension)
-- [Python 3.10+](https://www.python.org/downloads/) with [Pillow](https://pillow.readthedocs.io/) (for generating icons and branding)
-
-```bash
-pip install Pillow
-```
-
-Then build:
-
-```bash
-git clone https://github.com/lamia-lang/lamia-ide.git
-cd lamia-ide
-./build.sh
-```
-
-On macOS, the output is a DMG in `dist/out/`. Since you built it locally, Gatekeeper will not block it.
 
 ## Launch from Terminal
 

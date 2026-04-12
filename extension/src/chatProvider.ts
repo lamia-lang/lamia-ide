@@ -457,13 +457,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     /* ── Messages ──────────────────────────────────────────────────────── */
     #chat-messages {
-      flex: 1; overflow-y: auto; padding: 10px 8px;
+      flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 8px;
       display: flex; flex-direction: column; gap: 10px;
     }
     .message { max-width: 100%; word-break: break-word; }
     .message-bubble {
       display: inline-block; padding: 7px 10px;
       border-radius: 8px; line-height: 1.5; font-size: 13px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .message.user { text-align: right; }
     .message.user .message-bubble {
@@ -489,6 +492,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       font-size: 10px; opacity: 0.35; margin-top: 2px;
     }
     .message.user .message-meta { text-align: right; }
+    .message.assistant .message-bubble.compact { font-size: 12px; line-height: 1.45; }
+    .message.assistant .message-bubble.compact-more { font-size: 11px; line-height: 1.4; }
 
     /* ── Thinking dots ─────────────────────────────────────────────────── */
     .thinking { display: flex; align-items: center; gap: 4px; padding: 8px 10px; }
@@ -700,11 +705,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   <div id="input-area">
     <div id="file-chips"></div>
     <div id="input-wrapper">
-      <textarea id="user-input" rows="3" placeholder="Ask anything... @ to reference files (Ctrl+Enter to send)"></textarea>
+      <textarea id="user-input" rows="3" placeholder="Ask anything... @ to reference files (Enter to send, Shift+Enter newline)"></textarea>
       <div id="mention-popup" class="hidden"></div>
     </div>
     <div id="input-footer">
-      <span id="input-hint">Ctrl+Enter to send &middot; @ to attach files &middot; drop files here</span>
+      <span id="input-hint">Shift+Enter newline &middot; @ to attach files &middot; drop files here</span>
       <button id="send-btn">Send &#8594;</button>
     </div>
   </div>
@@ -811,6 +816,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       const bubble = document.createElement("div");
       bubble.className = "message-bubble";
       bubble.textContent = text;
+      if (role === "assistant" && text.length > 3500) {
+        bubble.classList.add("compact-more");
+      } else if (role === "assistant" && text.length > 1800) {
+        bubble.classList.add("compact");
+      }
       wrapper.appendChild(bubble);
 
       if (meta) {
@@ -1125,7 +1135,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); selectMention(mentionFiles[mentionIdx]); return; }
         if (e.key === "Escape") { hideMentionPopup(); return; }
       }
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendMessage(); }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
 
     function updateMentionActive() {

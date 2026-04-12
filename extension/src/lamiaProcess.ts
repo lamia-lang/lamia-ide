@@ -8,8 +8,8 @@ import { ensureLamia } from "./lamiaInstaller";
 
 export interface FileWrite {
   path: string;
-  action: "create" | "modify";
-  content: string;
+  action: "create" | "modify" | "delete";
+  content?: string;
   original?: string;
 }
 

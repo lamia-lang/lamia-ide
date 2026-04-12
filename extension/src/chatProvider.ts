@@ -60,11 +60,17 @@ type HostMessage =
 
 const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
   "If the user asks for code changes, perform the changes using tools. Do not only propose code." +
-  "When the user asks you to modify or create files, ALWAYS use the write_file tool - never just show code in your response." +
+  "When the user asks you to modify or create files, ALWAYS use the write_file tool - never just show code in your response. " +
+  "IMPORTANT: When editing existing files, make MINIMAL targeted changes. " +
   "Prefer using .hu files for code changes when possible. Only complicated logic like orchestration changes will be in .lm files." +
   "Use your tools to look up the relevant documentation before answering. " +
   "Do not create new files if you can edit existing ones." +
-  "When writing .lm files, use Lamia syntax as much as possible - as few plain Python lines as possible.";
+  "When writing .lm files, use Lamia syntax as much as possible - as few plain Python lines as possible.\n\n" +
+  "Do NOT rewrite entire files when only a few lines need changing. " +
+  "Do NOT add boilerplate, emojis, verbose commentary, or decorative formatting. " +
+  ".hu files are concise prompt templates - keep them short and readable. " +
+  "Do NOT add YAML front matter (---name/model/temperature---) unless the file already has it. " +
+  "Read the file first, then change only what the user asked for.";
 
 const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   get_docs:    { verb: "Reading docs",  argKey: "topic" },
@@ -160,14 +166,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   // ── History compression ────────────────────────────────────────────────────
 
   private _buildHistoryForLLM(): { role: string; text: string }[] {
-    const all = this._chat.messages.slice(0, -1);
-    if (all.length === 0) { return []; }
-    if (all.length <= RECENT_TURNS_KEEP) {
-      return all.map(m => ({ role: m.role, text: m.text }));
+    const meaningful = this._chat.messages
+      .slice(0, -1)
+      .filter(m => m.role !== "error");
+    if (meaningful.length === 0) { return []; }
+    if (meaningful.length <= RECENT_TURNS_KEEP) {
+      return meaningful.map(m => ({ role: m.role, text: m.text }));
     }
 
-    const older = all.slice(0, -RECENT_TURNS_KEEP);
-    const recent = all.slice(-RECENT_TURNS_KEEP);
+    const older = meaningful.slice(0, -RECENT_TURNS_KEEP);
+    const recent = meaningful.slice(-RECENT_TURNS_KEEP);
 
     if (this._historySummary && this._summarizedCount >= older.length) {
       return [
@@ -176,12 +184,12 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       ];
     }
 
-    return all.map(m => ({ role: m.role, text: m.text }));
+    return meaningful.map(m => ({ role: m.role, text: m.text }));
   }
 
   private _maybeCompressInBackground(): void {
     if (this._compressing) { return; }
-    const all = this._chat.messages;
+    const all = this._chat.messages.filter(m => m.role !== "error");
     if (all.length <= RECENT_TURNS_KEEP) { return; }
 
     const older = all.slice(0, -RECENT_TURNS_KEEP);
@@ -738,6 +746,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     .file-change-item .fc-icon.modify {
       color: var(--vscode-charts-yellow, #ee0);
     }
+    .file-change-item .fc-icon.delete {
+      color: var(--vscode-charts-red, #e44);
+    }
     .file-change-item .fc-name {
       flex: 1; min-width: 0; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
@@ -1022,13 +1033,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
         var icon = document.createElement("span");
         icon.className = "fc-icon " + f.action;
-        icon.textContent = f.action === "create" ? "+" : "\\u270e";
+        icon.textContent = f.action === "create" ? "+" : f.action === "delete" ? "\\u2212" : "\\u270e";
         item.appendChild(icon);
 
+        var label = f.action === "create" ? "Created: " : f.action === "delete" ? "Deleted: " : "Modified: ";
         var name = document.createElement("span");
         name.className = "fc-name";
         name.title = f.path;
-        name.textContent = (f.action === "create" ? "Created: " : "Modified: ") + basename;
+        name.textContent = label + basename;
         item.appendChild(name);
 
         if (f.action === "modify" && f.original != null) {
@@ -1041,13 +1053,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           item.appendChild(diffBtn);
         }
 
-        var openBtn = document.createElement("button");
-        openBtn.className = "fc-btn";
-        openBtn.textContent = "Open";
-        openBtn.addEventListener("click", function() {
-          vscodeApi.postMessage({ type: "openFile", path: f.path });
-        });
-        item.appendChild(openBtn);
+        if (f.action !== "delete") {
+          var openBtn = document.createElement("button");
+          openBtn.className = "fc-btn";
+          openBtn.textContent = "Open";
+          openBtn.addEventListener("click", function() {
+            vscodeApi.postMessage({ type: "openFile", path: f.path });
+          });
+          item.appendChild(openBtn);
+        }
 
         wrapper.appendChild(item);
       });

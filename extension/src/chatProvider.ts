@@ -107,12 +107,20 @@ function getNonce(): string {
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 
+const HISTORY_CHAR_BUDGET = 40_000;
+const RECENT_TURNS_KEEP = 6;
+const COMPRESS_THRESHOLD = 6_000;
+
 export class LamiaChatProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "lamia.chatView";
   private _view?: vscode.WebviewView;
   private _process: LamiaProcess | null = null;
   private _chat: Chat;
   private _lastFileWrites: FileWrite[] = [];
+
+  private _historySummary: string | null = null;
+  private _summarizedCount = 0;
+  private _compressing = false;
 
   constructor(private readonly _context: vscode.ExtensionContext) {
     this._chat = loadLatestChat() || newChat();
@@ -147,6 +155,80 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   public dispose(): void {
     this._process?.dispose();
     this._process = null;
+  }
+
+  // ── History compression ────────────────────────────────────────────────────
+
+  private _buildHistoryForLLM(): { role: string; text: string }[] {
+    const all = this._chat.messages.slice(0, -1);
+    if (all.length === 0) { return []; }
+    if (all.length <= RECENT_TURNS_KEEP) {
+      return all.map(m => ({ role: m.role, text: m.text }));
+    }
+
+    const older = all.slice(0, -RECENT_TURNS_KEEP);
+    const recent = all.slice(-RECENT_TURNS_KEEP);
+
+    if (this._historySummary && this._summarizedCount >= older.length) {
+      return [
+        { role: "system", text: this._historySummary },
+        ...recent.map(m => ({ role: m.role, text: m.text })),
+      ];
+    }
+
+    return all.map(m => ({ role: m.role, text: m.text }));
+  }
+
+  private _maybeCompressInBackground(): void {
+    if (this._compressing) { return; }
+    const all = this._chat.messages;
+    if (all.length <= RECENT_TURNS_KEEP) { return; }
+
+    const older = all.slice(0, -RECENT_TURNS_KEEP);
+    if (this._summarizedCount >= older.length) { return; }
+
+    const olderChars = older.reduce((n, m) => n + m.text.length, 0);
+    if (olderChars < COMPRESS_THRESHOLD) { return; }
+
+    const totalChars = all.reduce((n, m) => n + m.text.length, 0);
+    if (this._historySummary && totalChars < HISTORY_CHAR_BUDGET) { return; }
+
+    this._compressing = true;
+    const olderForSummary = older.map(m => ({ role: m.role, text: m.text }));
+    const existingSummary = this._historySummary;
+    const countToSummarize = older.length;
+
+    const doCompress = async () => {
+      try {
+        const proc = await this._ensureProcess();
+        let block = "";
+        if (existingSummary) {
+          block += `[Previous summary]\n${existingSummary}\n\n`;
+        }
+        block += olderForSummary
+          .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+          .join("\n\n");
+
+        const summaryPrompt =
+          "Summarize the following conversation history into a concise summary " +
+          "that preserves all key decisions, requests, code changes, file paths, " +
+          "and context needed for continuing the conversation. " +
+          "Keep it under 500 words.\n\n" +
+          block;
+
+        const resp = await proc.send(summaryPrompt);
+        if (resp.type === "response" && resp.text) {
+          this._historySummary = `[Summary of earlier conversation]\n${resp.text.trim()}`;
+          this._summarizedCount = countToSummarize;
+        }
+      } catch {
+        // Compression failed; next request uses raw history
+      } finally {
+        this._compressing = false;
+      }
+    };
+
+    doCompress();
   }
 
   // ── Process lifecycle ──────────────────────────────────────────────────────
@@ -202,6 +284,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
       case "newChat": {
         this._chat = newChat();
+        this._historySummary = null;
+        this._summarizedCount = 0;
         await this._sendInit();
         break;
       }
@@ -210,6 +294,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         const loaded = loadChat(message.id);
         if (loaded) {
           this._chat = loaded;
+          this._historySummary = null;
+          this._summarizedCount = 0;
           await this._sendInit();
         }
         break;
@@ -231,9 +317,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           const files = message.files && message.files.length > 0 ? message.files : undefined;
           const snippetPrefix = buildSnippetPrefix(message.snippets);
           const llmMessage = snippetPrefix ? `${snippetPrefix}\n\n${message.message}` : message.message;
+
+          const history = this._buildHistoryForLLM();
+
           const response = await proc.send(llmMessage, {
             system: SYSTEM_HINT,
             files,
+            messages: history,
             onToolUse: (tool, args) => {
               this._post({
                 type: "toolProgress",
@@ -254,6 +344,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             this._chat.messages.push(assistantMsg);
             saveChat(this._chat);
             this._post({ type: "response", text: response.text, model: response.model, tokens: response.tokens });
+
+            this._maybeCompressInBackground();
 
             if (response.files && response.files.length > 0) {
               this._post({

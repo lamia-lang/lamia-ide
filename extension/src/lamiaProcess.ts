@@ -155,6 +155,7 @@ export class LamiaProcess {
     options?: {
       system?: string;
       files?: string[];
+      messages?: { role: string; text: string }[];
       onToolUse?: (tool: string, args: Record<string, unknown>) => void;
     },
   ): Promise<LamiaResponse> {
@@ -165,6 +166,7 @@ export class LamiaProcess {
     const request: Record<string, unknown> = { text };
     if (options?.system) request.system = options.system;
     if (options?.files && options.files.length > 0) request.files = options.files;
+    if (options?.messages && options.messages.length > 0) request.messages = options.messages;
 
     return new Promise<LamiaResponse>((resolve, reject) => {
       this._queue.push({ resolve, reject, onToolUse: options?.onToolUse });

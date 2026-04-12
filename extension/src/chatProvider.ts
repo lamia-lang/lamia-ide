@@ -58,7 +58,8 @@ type HostMessage =
     };
 
 const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
-  "If the user asks about Lamia syntax, .lm files, .hu files, config.yaml, model chains, or Lamia-specific features, " +
+  "If the user asks about Lamia syntax or requests a Lamia code, .lm files, .hu files, config.yaml, model chains, or Lamia-specific features, " +
+  "When the user asks you to modify or create files, ALWAYS use the write_file tool - never just show code in your response." +
   "use your tools to look up the relevant documentation before answering. " +
   "When writing Lamia code, use Lamia syntax - not plain Python.";
 

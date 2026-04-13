@@ -35,7 +35,9 @@ type WebviewMessage =
   | { type: "openDiff"; path: string; original: string }
   | { type: "ready" }
   | { type: "newChat" }
-  | { type: "loadChat"; id: string };
+  | { type: "loadChat"; id: string }
+  | { type: "retry" }
+  | { type: "stop" };
 
 type HostMessage =
   | { type: "response"; text: string; model?: string; tokens?: { input: number; output: number } }
@@ -44,6 +46,8 @@ type HostMessage =
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
   | { type: "fileChanges"; files: { path: string; action: string; original?: string }[] }
+  | { type: "populateInput"; text: string }
+  | { type: "stopped" }
   | {
       type: "init";
       models: { value: string; label: string }[];
@@ -77,6 +81,8 @@ const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   read_file:   { verb: "Reading file",  argKey: "path" },
   list_files:  { verb: "Listing files", argKey: "directory" },
   write_file:  { verb: "Writing file",  argKey: "path" },
+  patch_file:  { verb: "Editing file",  argKey: "path" },
+  delete_file: { verb: "Deleting file",  argKey: "path" },
 };
 
 function toolProgressLabel(tool: string, args: Record<string, unknown>): string {
@@ -123,6 +129,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   private _process: LamiaProcess | null = null;
   private _chat: Chat;
   private _lastFileWrites: FileWrite[] = [];
+  private _generating = false;
 
   private _historySummary: string | null = null;
   private _summarizedCount = 0;
@@ -310,6 +317,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       }
 
       case "send": {
+        this._generating = true;
         this._post({ type: "thinking", active: true });
         try {
           const proc = await this._ensureProcess();
@@ -377,7 +385,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             this._post({ type: "error", text: response.message || "Unknown error" });
           }
         } catch (err: any) {
-          if (err instanceof NoPythonError) {
+          if (err.message === "Aborted") {
+            // User stopped generation — nothing to report
+          } else if (err instanceof NoPythonError) {
             this._post({
               type: "error",
               text: "Python 3.10+ is not installed. The chat and code execution require Python. "
@@ -387,7 +397,27 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             this._post({ type: "error", text: err.message });
           }
         } finally {
+          this._generating = false;
           this._post({ type: "thinking", active: false });
+        }
+        break;
+      }
+
+      case "retry": {
+        const lastUser = [...this._chat.messages].reverse().find(m => m.role === "user");
+        if (!lastUser) break;
+        this._post({ type: "populateInput", text: lastUser.text });
+        break;
+      }
+
+      case "stop": {
+        if (this._generating && this._process) {
+          const lastUser = [...this._chat.messages].reverse().find(m => m.role === "user");
+          this._process.abort();
+          this._post({ type: "stopped" });
+          if (lastUser) {
+            this._post({ type: "populateInput", text: lastUser.text });
+          }
         }
         break;
       }
@@ -641,6 +671,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
     #send-btn:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
     #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #stop-btn {
+      background: var(--vscode-errorForeground, #f44);
+      color: #fff;
+      border: none; border-radius: 4px;
+      padding: 5px 14px; font-size: 12px;
+      font-family: inherit; cursor: pointer;
+      display: none;
+    }
+    #stop-btn:hover { opacity: 0.85; }
 
     /* ── @-mention popup ──────────────────────────────────────────────── */
     #input-wrapper { position: relative; }
@@ -817,6 +856,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     </div>
     <div id="input-footer">
       <span id="input-hint">Shift+Enter newline &middot; @ to attach files &middot; drop files here</span>
+      <button id="stop-btn">Stop &#9632;</button>
       <button id="send-btn">Send &#8594;</button>
     </div>
   </div>
@@ -942,6 +982,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       return wrapper;
     }
 
+    var isGenerating = false;
+
+    function setGenerating(on) {
+      isGenerating = on;
+      document.getElementById("send-btn").style.display = on ? "none" : "";
+      document.getElementById("stop-btn").style.display = on ? "inline-block" : "none";
+    }
+
     function showThinking() {
       hideEmptyState();
       removeThinking();
@@ -955,6 +1003,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       }
       container.appendChild(thinkingEl);
       container.scrollTop = container.scrollHeight;
+      setGenerating(true);
     }
 
     function removeThinking() {
@@ -1235,6 +1284,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     document.getElementById("setup-provider").addEventListener("change", onProviderChange);
     document.getElementById("save-key-btn").addEventListener("click", saveApiKey);
     document.getElementById("send-btn").addEventListener("click", sendMessage);
+    document.getElementById("stop-btn").addEventListener("click", function() {
+      vscodeApi.postMessage({ type: "stop" });
+    });
 
     const userInput = document.getElementById("user-input");
 
@@ -1313,20 +1365,50 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "response": {
           completeToolProgress();
+          removeThinking();
+          setGenerating(false);
           const meta = formatMeta(msg.model, msg.tokens);
           const el = appendMessage("assistant", msg.text, meta || undefined);
           if (el) renderCodeBlocks(el.querySelector(".message-bubble"));
           document.getElementById("send-btn").disabled = false;
           break;
         }
-        case "error":
+        case "error": {
           completeToolProgress();
-          appendMessage("error", msg.text, undefined);
+          removeThinking();
+          setGenerating(false);
+          const errEl = appendMessage("error", msg.text, undefined);
+          if (errEl) {
+            var retryBtn = document.createElement("button");
+            retryBtn.className = "fc-btn";
+            retryBtn.textContent = "Retry";
+            retryBtn.style.marginTop = "6px";
+            retryBtn.addEventListener("click", function() {
+              vscodeApi.postMessage({ type: "retry" });
+            });
+            errEl.querySelector(".message-bubble").appendChild(retryBtn);
+          }
           document.getElementById("send-btn").disabled = false;
           break;
+        }
+        case "populateInput": {
+          var inp = document.getElementById("user-input");
+          inp.value = msg.text;
+          inp.style.height = "auto";
+          inp.style.height = Math.min(inp.scrollHeight, 140) + "px";
+          inp.focus();
+          break;
+        }
+        case "stopped": {
+          completeToolProgress();
+          removeThinking();
+          setGenerating(false);
+          document.getElementById("send-btn").disabled = false;
+          break;
+        }
         case "thinking":
           if (msg.active) showThinking();
-          else removeThinking();
+          else { removeThinking(); setGenerating(false); }
           break;
         case "fileList":
           if (msg.files.length > 0) showMentionPopup(msg.files);

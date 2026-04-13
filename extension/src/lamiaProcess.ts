@@ -183,6 +183,14 @@ export class LamiaProcess {
     return this._ready;
   }
 
+  abort(): void {
+    const pending = this._queue.splice(0);
+    for (const p of pending) {
+      p.reject(new Error("Aborted"));
+    }
+    this.restart();
+  }
+
   restart(newCwd?: string): void {
     if (newCwd) this._cwd = newCwd;
     if (this._proc) {

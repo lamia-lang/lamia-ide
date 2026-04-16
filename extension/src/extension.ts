@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { LamiaChatProvider } from "./chatProvider";
 import { LamiaDefinitionProvider } from "./definitionProvider";
+import { LamiaCompletionProvider } from "./completionProvider";
+import { invalidateSymbols } from "./symbolIndex";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
 import { startWatching } from "./fileContext";
 import { setLastCopied } from "./clipboardStore";
@@ -25,6 +27,21 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerDefinitionProvider({ language: "lamia" }, defProvider),
     vscode.languages.registerDefinitionProvider({ language: "lamia-prompt" }, defProvider),
   );
+
+  const completionProvider = new LamiaCompletionProvider();
+  context.subscriptions.push(
+    vscode.languages.registerCompletionItemProvider(
+      { language: "lamia" },
+      completionProvider,
+      "(", ",",
+    ),
+  );
+
+  const symbolWatcher = vscode.workspace.createFileSystemWatcher("**/*.{hu,lm}");
+  symbolWatcher.onDidCreate(() => invalidateSymbols());
+  symbolWatcher.onDidDelete(() => invalidateSymbols());
+  symbolWatcher.onDidChange(() => invalidateSymbols());
+  context.subscriptions.push(symbolWatcher);
 
   const chatProvider = new LamiaChatProvider(context);
   _chatProvider = chatProvider;

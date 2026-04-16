@@ -40,7 +40,8 @@ type WebviewMessage =
   | { type: "deleteChat"; id: string }
   | { type: "listChats" }
   | { type: "retry" }
-  | { type: "stop" };
+  | { type: "stop" }
+  | { type: "dropFile"; uri: string };
 
 type HostMessage =
   | { type: "response"; text: string; model?: string; tokens?: { input: number; output: number } }
@@ -51,6 +52,7 @@ type HostMessage =
   | { type: "fileChanges"; files: { path: string; action: string; original?: string }[] }
   | { type: "populateInput"; text: string }
   | { type: "stopped" }
+  | { type: "addFile"; file: { name: string; relativePath: string; absolutePath: string } }
   | {
       type: "init";
       models: { value: string; label: string }[];
@@ -474,6 +476,42 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         break;
       }
 
+      case "dropFile": {
+        const dropUri = message.uri;
+        let fsPath = "";
+        try {
+          fsPath = vscode.Uri.parse(dropUri).fsPath;
+        } catch {
+          // plain path (not a URI)
+          fsPath = dropUri;
+        }
+        if (fsPath) {
+          const path = await import("path");
+          const normalizedDrop = path.normalize(fsPath);
+          const projectFiles = filterFiles("");
+          const existing = projectFiles.find(
+            (f) => path.normalize(f.absolutePath) === normalizedDrop
+          );
+          if (existing) {
+            this._post({ type: "addFile", file: existing });
+            break;
+          }
+
+          const folders = vscode.workspace.workspaceFolders;
+          const root = folders?.[0]?.uri.fsPath || "";
+          const rel = root ? path.relative(root, fsPath) : path.basename(fsPath);
+          this._post({
+            type: "addFile",
+            file: {
+              name: path.basename(fsPath),
+              relativePath: rel,
+              absolutePath: fsPath,
+            },
+          });
+        }
+        break;
+      }
+
       case "openFile": {
         const uri = vscode.Uri.file(message.path);
         vscode.commands.executeCommand("vscode.open", uri);
@@ -874,7 +912,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     <label for="model-select">Model:</label>
     <select id="model-select"></select>
     <button class="icon-btn" id="new-chat-btn" title="New chat">&#43;</button>
-    <button class="icon-btn" id="history-btn" title="Chat history">&#9776;</button>
+    <button class="icon-btn" id="history-btn" title="Chat history"><svg width="12" height="12" viewBox="0 0 16 16" style="vertical-align:-1px"><circle cx="8" cy="8" r="6.5" stroke="currentColor" fill="none" stroke-width="1.4"/><line x1="8" y1="5" x2="8" y2="8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="8" y1="8.5" x2="10.5" y2="8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <button class="icon-btn" id="settings-btn" title="API key settings">&#9881;</button>
   </div>
 
@@ -911,11 +949,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   <div id="input-area">
     <div id="file-chips"></div>
     <div id="input-wrapper">
-      <textarea id="user-input" rows="3" placeholder="Ask anything... @ to reference files (Enter to send, Shift+Enter newline)"></textarea>
+      <textarea id="user-input" rows="3" placeholder="Ask anything... @ to reference files or Shift+drag and drop files (Enter to send, Shift+Enter newline)"></textarea>
       <div id="mention-popup" class="hidden"></div>
     </div>
     <div id="input-footer">
-      <span id="input-hint">Shift+Enter newline &middot; @ to attach files &middot; drop files here</span>
+      <span id="input-hint">Shift+Enter newline &middot; @ to attach files &middot; drop files</span>
       <button id="stop-btn">Stop &#9632;</button>
       <button id="send-btn">Send &#8594;</button>
     </div>
@@ -1451,12 +1489,75 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     // ── Drag and drop ──────────────────────────────────────────────────────
 
     const inputArea = document.getElementById("input-area");
-    inputArea.addEventListener("dragover", (e) => { e.preventDefault(); inputArea.style.outline = "2px dashed var(--vscode-focusBorder)"; });
-    inputArea.addEventListener("dragleave", () => { inputArea.style.outline = ""; });
-    inputArea.addEventListener("drop", (e) => {
+    function onDragOver(e) {
+      e.preventDefault();
+      inputArea.style.outline = "2px dashed var(--vscode-focusBorder)";
+    }
+    function onDragLeave() {
+      inputArea.style.outline = "";
+    }
+    function handleDrop(e) {
       e.preventDefault();
       inputArea.style.outline = "";
-    });
+
+      // 1) VSCode/Electron file drop from explorer/editor
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        for (var i = 0; i < e.dataTransfer.files.length; i++) {
+          var filePath = e.dataTransfer.files[i].path;
+          if (filePath) {
+            vscodeApi.postMessage({ type: "dropFile", uri: filePath });
+          }
+        }
+        return;
+      }
+
+      // 2) VSCode explorer custom payload
+      var explorerPayload = e.dataTransfer.getData("application/vnd.code.tree.explorer");
+      if (explorerPayload) {
+        try {
+          var parsed = JSON.parse(explorerPayload);
+          var items = Array.isArray(parsed) ? parsed : [parsed];
+          items.forEach(function(it) {
+            if (it && typeof it.resourceUri === "string") {
+              vscodeApi.postMessage({ type: "dropFile", uri: it.resourceUri });
+            }
+          });
+          return;
+        } catch {
+          // ignore and continue with other mime types
+        }
+      }
+
+      // 3) Generic URI list
+      var uriList = e.dataTransfer.getData("text/uri-list");
+      if (uriList) {
+        uriList.split("\\n").forEach(function(uri) {
+          uri = uri.trim();
+          if (uri && !uri.startsWith("#")) {
+            vscodeApi.postMessage({ type: "dropFile", uri: uri });
+          }
+        });
+        return;
+      }
+
+      // 4) Plain path fallback
+      var plain = e.dataTransfer.getData("text/plain");
+      if (plain) {
+        plain.split("\\n").forEach(function(line) {
+          line = line.trim();
+          if (line) {
+            vscodeApi.postMessage({ type: "dropFile", uri: line });
+          }
+        });
+      }
+    }
+
+    inputArea.addEventListener("dragover", onDragOver);
+    inputArea.addEventListener("dragleave", onDragLeave);
+    inputArea.addEventListener("drop", handleDrop);
+    userInput.addEventListener("dragover", onDragOver);
+    userInput.addEventListener("dragleave", onDragLeave);
+    userInput.addEventListener("drop", handleDrop);
 
     // ── Message listener ───────────────────────────────────────────────────
 
@@ -1538,6 +1639,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "chatList":
           renderChatList(msg.chats, msg.currentId);
+          break;
+        case "addFile":
+          addFileChip(msg.file);
           break;
       }
     });

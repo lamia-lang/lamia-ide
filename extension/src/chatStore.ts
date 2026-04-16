@@ -109,3 +109,11 @@ export function loadChat(id: string): Chat | null {
     return null;
   }
 }
+
+export function deleteChat(id: string): void {
+  try {
+    fs.unlinkSync(chatPath(id));
+  } catch {
+    // already gone
+  }
+}

@@ -16,6 +16,7 @@ import {
   loadLatestChat,
   listChats,
   loadChat,
+  deleteChat,
 } from "./chatStore";
 import { NoPythonError } from "./lamiaInstaller";
 import { getChatConfigPath, writeSelectedModel, readSelectedModel, ensureChatConfig } from "./chatConfig";
@@ -36,6 +37,8 @@ type WebviewMessage =
   | { type: "ready" }
   | { type: "newChat" }
   | { type: "loadChat"; id: string }
+  | { type: "deleteChat"; id: string }
+  | { type: "listChats" }
   | { type: "retry" }
   | { type: "stop" };
 
@@ -59,6 +62,11 @@ type HostMessage =
   | {
       type: "fileList";
       files: { name: string; relativePath: string; absolutePath: string }[];
+    }
+  | {
+      type: "chatList";
+      chats: { id: string; title: string; updated: number }[];
+      currentId: string;
     };
 
 
@@ -316,6 +324,23 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         break;
       }
 
+      case "deleteChat": {
+        deleteChat(message.id);
+        if (this._chat.id === message.id) {
+          this._chat = newChat();
+          this._historySummary = null;
+          this._summarizedCount = 0;
+          await this._sendInit();
+        }
+        this._sendChatList();
+        break;
+      }
+
+      case "listChats": {
+        this._sendChatList();
+        break;
+      }
+
       case "send": {
         this._generating = true;
         this._post({ type: "thinking", active: true });
@@ -497,6 +522,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private _sendChatList(): void {
+    this._post({
+      type: "chatList",
+      chats: listChats(),
+      currentId: this._chat.id,
+    });
+  }
+
   private _post(msg: HostMessage): void {
     this._view?.webview.postMessage(msg);
   }
@@ -588,6 +621,28 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     #save-key-btn:hover { background: var(--vscode-button-hoverBackground); }
     .setup-status { font-size: 11px; opacity: 0.6; margin-top: 4px; }
     .setup-status .configured { color: var(--vscode-charts-green, #4ec); }
+
+    /* ── Chat history panel ──────────────────────────────────────────── */
+    #chat-history-panel {
+      border-bottom: 1px solid var(--vscode-panel-border, #444);
+      max-height: 50vh; overflow-y: auto; flex-shrink: 0;
+    }
+    #chat-history-panel.hidden { display: none; }
+    .chat-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px; cursor: pointer; font-size: 12px;
+      border-bottom: 1px solid var(--vscode-panel-border, #333);
+    }
+    .chat-item:hover { background: var(--vscode-list-hoverBackground); }
+    .chat-item.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+    .chat-item-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-item-date { font-size: 10px; opacity: 0.5; white-space: nowrap; }
+    .chat-item-delete {
+      background: none; border: none; color: var(--vscode-foreground);
+      opacity: 0.3; cursor: pointer; font-size: 12px; padding: 0 2px;
+      flex-shrink: 0;
+    }
+    .chat-item-delete:hover { opacity: 0.9; color: var(--vscode-errorForeground, #f44); }
 
     /* ── Messages ──────────────────────────────────────────────────────── */
     #chat-messages {
@@ -818,8 +873,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   <div id="header-bar">
     <label for="model-select">Model:</label>
     <select id="model-select"></select>
+    <button class="icon-btn" id="new-chat-btn" title="New chat">&#43;</button>
+    <button class="icon-btn" id="history-btn" title="Chat history">&#9776;</button>
     <button class="icon-btn" id="settings-btn" title="API key settings">&#9881;</button>
   </div>
+
+  <!-- Chat history -->
+  <div id="chat-history-panel" class="hidden"></div>
 
   <!-- API key setup -->
   <div id="setup-panel" class="hidden">
@@ -1277,8 +1337,67 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       });
     }
 
+    // ── Chat history ──────────────────────────────────────────────────────
+
+    function toggleHistory() {
+      const panel = document.getElementById("chat-history-panel");
+      if (panel.classList.contains("hidden")) {
+        vscodeApi.postMessage({ type: "listChats" });
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    function renderChatList(chats, currentId) {
+      const panel = document.getElementById("chat-history-panel");
+      panel.innerHTML = "";
+      if (chats.length === 0) {
+        panel.innerHTML = '<div style="padding:10px;font-size:12px;opacity:0.5">No saved chats</div>';
+        return;
+      }
+      for (var i = 0; i < chats.length; i++) {
+        (function(chat) {
+          var item = document.createElement("div");
+          item.className = "chat-item" + (chat.id === currentId ? " active" : "");
+
+          var title = document.createElement("span");
+          title.className = "chat-item-title";
+          title.textContent = chat.title;
+
+          var date = document.createElement("span");
+          date.className = "chat-item-date";
+          var d = new Date(chat.updated);
+          date.textContent = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+          var del = document.createElement("button");
+          del.className = "chat-item-delete";
+          del.textContent = "\\u00d7";
+          del.title = "Delete chat";
+          del.addEventListener("click", function(e) {
+            e.stopPropagation();
+            vscodeApi.postMessage({ type: "deleteChat", id: chat.id });
+          });
+
+          item.appendChild(title);
+          item.appendChild(date);
+          item.appendChild(del);
+          item.addEventListener("click", function() {
+            document.getElementById("chat-history-panel").classList.add("hidden");
+            vscodeApi.postMessage({ type: "loadChat", id: chat.id });
+          });
+          panel.appendChild(item);
+        })(chats[i]);
+      }
+    }
+
     // ── Event wiring ──────────────────────────────────────────────────────
 
+    document.getElementById("new-chat-btn").addEventListener("click", function() {
+      document.getElementById("chat-history-panel").classList.add("hidden");
+      vscodeApi.postMessage({ type: "newChat" });
+    });
+    document.getElementById("history-btn").addEventListener("click", toggleHistory);
     document.getElementById("settings-btn").addEventListener("click", toggleSetup);
     document.getElementById("model-select").addEventListener("change", onModelChange);
     document.getElementById("setup-provider").addEventListener("change", onProviderChange);
@@ -1416,6 +1535,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "clipboardContext":
           if (msg.snippet) addSnippetChip(msg.snippet);
+          break;
+        case "chatList":
+          renderChatList(msg.chats, msg.currentId);
           break;
       }
     });

@@ -1,7 +1,9 @@
+import * as path from "path";
 import * as vscode from "vscode";
 import { LamiaChatProvider } from "./chatProvider";
 import { LamiaDefinitionProvider } from "./definitionProvider";
 import { LamiaCompletionProvider } from "./completionProvider";
+import { LamiaRunCodeLensProvider } from "./runCodeLensProvider";
 import { invalidateSymbols } from "./symbolIndex";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
 import { startWatching } from "./fileContext";
@@ -37,6 +39,13 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: "lamia" },
+      new LamiaRunCodeLensProvider(),
+    ),
+  );
+
   const symbolWatcher = vscode.workspace.createFileSystemWatcher("**/*.{hu,lm}");
   symbolWatcher.onDidCreate(() => invalidateSymbols());
   symbolWatcher.onDidDelete(() => invalidateSymbols());
@@ -69,14 +78,15 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const filePath = editor.document.fileName;
-      const workDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const fileDir = path.dirname(filePath);
+      const fileName = path.basename(filePath);
 
       const terminal =
         vscode.window.terminals.find((t) => t.name === "Lamia") ??
-        vscode.window.createTerminal({ name: "Lamia", cwd: workDir });
+        vscode.window.createTerminal({ name: "Lamia", cwd: fileDir });
 
       terminal.show();
-      terminal.sendText(`lamia "${filePath}"`);
+      terminal.sendText(`cd "${fileDir}" && lamia "${fileName}"`);
     })
   );
 

@@ -91,6 +91,13 @@
           "when": "resourceExtname == .lm",
           "group": "navigation"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "lamia.run",
+          "when": "resourceExtname == .lm",
+          "group": "navigation"
+        }
       ]
     },
     "keybindings": [

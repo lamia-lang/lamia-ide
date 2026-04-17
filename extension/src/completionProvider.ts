@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { getHuSymbols, findHuByName, HuSymbol } from "./symbolIndex";
+import { getHuSymbols, findHuByName, HuSymbol, HuParam } from "./symbolIndex";
 
 export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
@@ -38,13 +38,20 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
         vscode.CompletionItemKind.Function,
       );
       item.detail = `${sym.relativePath}`;
-      item.documentation = sym.params.length > 0
-        ? `Parameters: ${sym.params.join(", ")}`
-        : "No parameters";
+      const reqParams = sym.paramDetails.filter((p) => p.required);
+      const optParams = sym.paramDetails.filter((p) => !p.required);
+      const docParts: string[] = [];
+      if (reqParams.length > 0) {
+        docParts.push(`Required: ${reqParams.map((p) => p.name).join(", ")}`);
+      }
+      if (optParams.length > 0) {
+        docParts.push(`Optional: ${optParams.map((p) => p.name).join(", ")}`);
+      }
+      item.documentation = docParts.length > 0 ? docParts.join("\n") : "No parameters";
 
-      if (sym.params.length > 0) {
-        const paramSnippet = sym.params
-          .map((p, i) => `${p}=\${${i + 1}}`)
+      if (reqParams.length > 0) {
+        const paramSnippet = reqParams
+          .map((p, i) => `${p.name}="\${${i + 1}}"`)
           .join(", ");
         item.insertText = new vscode.SnippetString(`${sym.name}(${paramSnippet})`);
       } else {
@@ -68,17 +75,19 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
   }
 
   private _completeParams(sym: HuSymbol): vscode.CompletionItem[] | undefined {
-    if (sym.params.length === 0) return undefined;
+    if (sym.paramDetails.length === 0) return undefined;
 
     const items: vscode.CompletionItem[] = [];
-    for (const param of sym.params) {
+    for (const pd of sym.paramDetails) {
+      const label = pd.required ? `${pd.name}=` : `${pd.name}=  (optional)`;
       const item = new vscode.CompletionItem(
-        `${param}=`,
-        vscode.CompletionItemKind.Field,
+        label,
+        pd.required ? vscode.CompletionItemKind.Field : vscode.CompletionItemKind.Property,
       );
-      item.detail = `${sym.name} parameter`;
-      item.insertText = new vscode.SnippetString(`${param}=\${1}`);
-      item.sortText = `0_${param}`;
+      item.detail = pd.required ? `${sym.name} param (required)` : `${sym.name} param (optional)`;
+      item.insertText = new vscode.SnippetString(`${pd.name}="\${1}"`);
+      item.sortText = pd.required ? `0_${pd.name}` : `1_${pd.name}`;
+      item.filterText = pd.name;
       items.push(item);
     }
 

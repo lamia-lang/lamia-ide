@@ -8,14 +8,21 @@ const SKIP_DIRS = new Set([
 ]);
 
 const MAX_DEPTH = 6;
-const PARAM_RE = /\{(\w+)\}/g;
+const PARAM_RE = /\{(\w+)(?::([^}]*))?\}/g;
 
 // ── Symbol types ────────────────────────────────────────────────────────────
+
+export interface HuParam {
+  name: string;
+  required: boolean;
+  defaultValue?: string;
+}
 
 export interface HuSymbol {
   kind: "hu";
   name: string;
   params: string[];
+  paramDetails: HuParam[];
   filePath: string;
   relativePath: string;
 }
@@ -76,19 +83,29 @@ function parseHuFile(filePath: string, root: string): HuSymbol | null {
   try {
     const content = fs.readFileSync(filePath, "utf8");
     const name = path.basename(filePath, ".hu");
-    const params: string[] = [];
+    const seen = new Set<string>();
+    const paramDetails: HuParam[] = [];
     let m: RegExpExecArray | null;
     PARAM_RE.lastIndex = 0;
     while ((m = PARAM_RE.exec(content)) !== null) {
-      const p = m[1];
-      if (!p.startsWith("@") && !params.includes(p)) {
-        params.push(p);
-      }
+      const pName = m[1];
+      const defaultVal = m[2]; // undefined if no `:...`
+      if (pName.startsWith("@") || seen.has(pName)) continue;
+      seen.add(pName);
+      const isOptional = defaultVal !== undefined;
+      paramDetails.push({
+        name: pName,
+        required: !isOptional,
+        defaultValue: isOptional
+          ? (defaultVal === "None" ? "" : defaultVal)
+          : undefined,
+      });
     }
     return {
       kind: "hu",
       name,
-      params,
+      params: paramDetails.map((p) => p.name),
+      paramDetails,
       filePath,
       relativePath: path.relative(root, filePath),
     };

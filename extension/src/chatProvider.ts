@@ -84,7 +84,9 @@ const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia 
   "Do NOT add boilerplate, emojis, verbose commentary, or decorative formatting. " +
   ".hu files are concise prompt templates - keep them short and readable. " +
   "Do NOT add YAML front matter (---name/model/temperature---) unless the file already has it. " +
-  "Read the file first, then change only what the user asked for.";
+  "Read the file first, then change only what the user asked for. " +
+  "When asked to copy or move files/directories, ALWAYS use copy_file or move_file tools — never recreate files manually. " +
+  "Use grep to search for patterns in code and glob to find files by name.";
 
 const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   get_docs:    { verb: "Reading docs",  argKey: "topic" },
@@ -92,7 +94,11 @@ const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   list_files:  { verb: "Listing files", argKey: "directory" },
   write_file:  { verb: "Writing file",  argKey: "path" },
   patch_file:  { verb: "Editing file",  argKey: "path" },
-  delete_file: { verb: "Deleting file",  argKey: "path" },
+  delete_file: { verb: "Deleting file", argKey: "path" },
+  copy_file:   { verb: "Copying",       argKey: "source" },
+  move_file:   { verb: "Moving",        argKey: "source" },
+  grep:        { verb: "Searching",     argKey: "pattern" },
+  glob:        { verb: "Finding files", argKey: "pattern" },
 };
 
 function toolProgressLabel(tool: string, args: Record<string, unknown>): string {

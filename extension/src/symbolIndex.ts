@@ -9,6 +9,7 @@ const SKIP_DIRS = new Set([
 
 const MAX_DEPTH = 6;
 const PARAM_RE = /\{(\w+)(?::([^}]*))?\}/g;
+const FILE_REF_RE = /\{@(\w+)\}/g;
 
 // ── Symbol types ────────────────────────────────────────────────────────────
 
@@ -100,6 +101,15 @@ function parseHuFile(filePath: string, root: string): HuSymbol | null {
           ? (defaultVal === "None" ? "" : defaultVal)
           : undefined,
       });
+    }
+    // {@identifier} file refs are optional parameters (caller provides filepath)
+    FILE_REF_RE.lastIndex = 0;
+    while ((m = FILE_REF_RE.exec(content)) !== null) {
+      const ref = m[1];
+      if (!seen.has(ref)) {
+        seen.add(ref);
+        paramDetails.push({ name: ref, required: false, defaultValue: "" });
+      }
     }
     return {
       kind: "hu",

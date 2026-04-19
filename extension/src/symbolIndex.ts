@@ -41,30 +41,36 @@ export type LamiaSymbol = HuSymbol | LmDefSymbol;
 // ── Index ───────────────────────────────────────────────────────────────────
 
 let _symbols: LamiaSymbol[] | null = null;
+let _scopeRoot: string | null = null;
 
-export function getSymbols(): LamiaSymbol[] {
+export function getSymbols(contextFile?: string): LamiaSymbol[] {
+  const root = resolveProjectRoot(contextFile);
+  if (root !== _scopeRoot) {
+    _symbols = null;
+    _scopeRoot = root;
+  }
   if (!_symbols) {
-    _symbols = buildIndex();
+    _symbols = buildIndex(root);
   }
   return _symbols;
 }
 
 export function invalidateSymbols(): void {
   _symbols = null;
+  _scopeRoot = null;
 }
 
-export function getHuSymbols(): HuSymbol[] {
-  return getSymbols().filter((s): s is HuSymbol => s.kind === "hu");
+export function getHuSymbols(contextFile?: string): HuSymbol[] {
+  return getSymbols(contextFile).filter((s): s is HuSymbol => s.kind === "hu");
 }
 
-export function findHuByName(name: string): HuSymbol | undefined {
-  return getHuSymbols().find((s) => s.name === name);
+export function findHuByName(name: string, contextFile?: string): HuSymbol | undefined {
+  return getHuSymbols(contextFile).find((s) => s.name === name);
 }
 
 // ── Build ───────────────────────────────────────────────────────────────────
 
-function buildIndex(): LamiaSymbol[] {
-  const root = projectRoot();
+function buildIndex(root: string | null): LamiaSymbol[] {
   if (!root) return [];
 
   const symbols: LamiaSymbol[] = [];
@@ -126,7 +132,17 @@ function parseHuFile(filePath: string, root: string): HuSymbol | null {
 
 // ── Scanning helpers ────────────────────────────────────────────────────────
 
-function projectRoot(): string | null {
+function resolveProjectRoot(contextFile?: string): string | null {
+  if (contextFile) {
+    let dir = path.dirname(contextFile);
+    const fsRoot = path.parse(dir).root;
+    while (dir !== fsRoot) {
+      if (fs.existsSync(path.join(dir, "config.yaml"))) return dir;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) return null;
   return folders[0].uri.fsPath;

@@ -21,7 +21,7 @@ export class LamiaReferenceProvider implements vscode.ReferenceProvider {
     const word = document.getText(wordRange);
     if (!word || word.length < 2) return null;
 
-    const sym = findHuByName(word);
+    const sym = findHuByName(word, document.uri.fsPath);
     const isKnownSymbol = !!sym;
 
     if (!isKnownSymbol) {

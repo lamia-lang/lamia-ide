@@ -17,7 +17,7 @@ export class LamiaSignatureHelpProvider implements vscode.SignatureHelpProvider 
     const fnName = fnMatch[1];
     const argsText = fnMatch[2];
 
-    const sym = findHuByName(fnName);
+    const sym = findHuByName(fnName, document.uri.fsPath);
     if (!sym || sym.paramDetails.length === 0) return null;
 
     const sig = new vscode.SignatureInformation(buildLabel(sym.name, sym.paramDetails));

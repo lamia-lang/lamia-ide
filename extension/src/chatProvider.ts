@@ -383,6 +383,17 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         this._post({ type: "thinking", active: true });
         const completedTools: Array<{ tool: string; label: string }> = [];
         try {
+          // Keep backend config in sync with the model used for this turn.
+          if (message.model) {
+            const selected = readSelectedModel();
+            if (selected !== message.model) {
+              writeSelectedModel(message.model);
+              if (this._process) {
+                this._process.restart();
+              }
+            }
+          }
+
           const proc = await this._ensureProcess();
 
           const userMsg: ChatMessage = {
@@ -465,7 +476,22 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       case "retry": {
         const lastUser = [...this._chat.messages].reverse().find(m => m.role === "user");
         if (!lastUser) break;
-        this._post({ type: "populateInput", text: lastUser.text });
+
+        const msgs = this._chat.messages;
+        const hasPartialProgress = msgs.length >= 2
+          && msgs[msgs.length - 1].role === "error"
+          && msgs[msgs.length - 2].role === "assistant"
+          && msgs[msgs.length - 2].text.startsWith("Completed steps before the error:");
+
+        if (hasPartialProgress) {
+          this._handleMessage({
+            type: "send",
+            message: "Continue from where you left off. Do not repeat the steps that already succeeded.",
+            model: "",
+          });
+        } else {
+          this._post({ type: "populateInput", text: lastUser.text });
+        }
         break;
       }
 

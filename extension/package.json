@@ -193,8 +193,8 @@
         },
         "lamia.chat.timeoutMs": {
           "type": "number",
-          "default": 120000,
-          "description": "Milliseconds to wait for a lamia CLI response before timing out."
+          "default": 300000,
+          "description": "Milliseconds to wait for a lamia CLI response before timing out. Set to 0 to disable timeout."
         }
       }
     }

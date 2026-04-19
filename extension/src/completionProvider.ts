@@ -11,23 +11,24 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
   ): vscode.CompletionItem[] | undefined {
     const lineText = document.lineAt(position).text;
     const textBefore = lineText.substring(0, position.character);
+    const ctxFile = document.uri.fsPath;
 
-    const paramCtx = this._paramContext(textBefore);
+    const paramCtx = this._paramContext(textBefore, ctxFile);
     if (paramCtx) {
       return this._completeParams(paramCtx);
     }
 
-    return this._completeFunctionNames(textBefore);
+    return this._completeFunctionNames(textBefore, ctxFile);
   }
 
   // ── Function name completion ────────────────────────────────────────────
 
-  private _completeFunctionNames(textBefore: string): vscode.CompletionItem[] | undefined {
+  private _completeFunctionNames(textBefore: string, ctxFile: string): vscode.CompletionItem[] | undefined {
     const wordMatch = textBefore.match(/([a-zA-Z_]\w*)$/);
     if (!wordMatch) return undefined;
 
     const prefix = wordMatch[1].toLowerCase();
-    const symbols = getHuSymbols();
+    const symbols = getHuSymbols(ctxFile);
     const items: vscode.CompletionItem[] = [];
 
     for (const sym of symbols) {
@@ -68,10 +69,10 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
   // ── Parameter completion (inside parens) ──────────────────────────────
 
-  private _paramContext(textBefore: string): HuSymbol | null {
+  private _paramContext(textBefore: string, ctxFile: string): HuSymbol | null {
     const m = textBefore.match(/([a-zA-Z_]\w*)\s*\([^)]*$/);
     if (!m) return null;
-    return findHuByName(m[1]) ?? null;
+    return findHuByName(m[1], ctxFile) ?? null;
   }
 
   private _completeParams(sym: HuSymbol): vscode.CompletionItem[] | undefined {

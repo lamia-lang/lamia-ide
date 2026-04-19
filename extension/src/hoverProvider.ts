@@ -11,7 +11,7 @@ export class LamiaHoverProvider implements vscode.HoverProvider {
     if (!wordRange) return null;
 
     const word = document.getText(wordRange);
-    const sym = findHuByName(word);
+    const sym = findHuByName(word, document.uri.fsPath);
     if (!sym) return null;
 
     const sig = buildSignature(sym.name, sym.paramDetails);

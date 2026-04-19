@@ -161,7 +161,17 @@ export class LamiaProcess {
   ): Promise<LamiaResponse> {
     if (this._disposed) throw new Error("LamiaProcess is disposed");
 
-    if (!this._ready) await this._readyPromise;
+    const timeoutMs = this._requestTimeoutMs();
+    const hasTimeout = timeoutMs > 0;
+
+    if (!this._ready) {
+      try {
+        await this._waitForReady(timeoutMs);
+      } catch (err) {
+        this.restart();
+        throw err;
+      }
+    }
 
     const request: Record<string, unknown> = { text };
     if (options?.system) request.system = options.system;
@@ -169,12 +179,53 @@ export class LamiaProcess {
     if (options?.messages && options.messages.length > 0) request.messages = options.messages;
 
     return new Promise<LamiaResponse>((resolve, reject) => {
-      this._queue.push({ resolve, reject, onToolUse: options?.onToolUse });
+      let settled = false;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
+      const pending: PendingRequest = {
+        resolve: (value) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          resolve(value);
+        },
+        reject: (err) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          reject(err);
+        },
+        onToolUse: options?.onToolUse,
+      };
+
+      this._queue.push(pending);
+
+      if (hasTimeout) {
+        timeoutHandle = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          const idx = this._queue.indexOf(pending);
+          if (idx >= 0) this._queue.splice(idx, 1);
+          this.restart();
+          reject(
+            new Error(
+              `Lamia request timed out after ${timeoutMs}ms. `
+              + `If this keeps happening, check ${this._logFile} for details.`
+            )
+          );
+        }, timeoutMs);
+      }
+
       try {
         this._proc!.stdin!.write(JSON.stringify(request) + "\n", "utf8");
       } catch (err: any) {
-        this._queue.pop();
-        reject(new Error(`Failed to write to lamia stdin: ${err.message}`));
+        if (!settled) {
+          settled = true;
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          const idx = this._queue.indexOf(pending);
+          if (idx >= 0) this._queue.splice(idx, 1);
+          reject(new Error(`Failed to write to lamia stdin: ${err.message}`));
+        }
       }
     });
   }
@@ -252,6 +303,43 @@ export class LamiaProcess {
     if (userPath) return userPath;
 
     return ensureLamia();
+  }
+
+  private _requestTimeoutMs(): number {
+    const configured = vscode.workspace.getConfiguration("lamia").get<number>("chat.timeoutMs", 300000);
+    if (typeof configured !== "number" || !Number.isFinite(configured)) {
+      return 300000;
+    }
+    return Math.max(0, Math.floor(configured));
+  }
+
+  private async _waitForReady(timeoutMs: number): Promise<void> {
+    if (this._ready) return;
+    if (timeoutMs <= 0) {
+      await this._readyPromise;
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Lamia CLI did not become ready within ${timeoutMs}ms. `
+            + `Check ${this._logFile} for startup errors.`
+          )
+        );
+      }, timeoutMs);
+
+      this._readyPromise.then(
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
   }
 }
 

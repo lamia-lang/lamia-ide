@@ -95,10 +95,12 @@ const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   write_file:  { verb: "Writing file",  argKey: "path" },
   patch_file:  { verb: "Editing file",  argKey: "path" },
   delete_file: { verb: "Deleting file", argKey: "path" },
-  copy_file:   { verb: "Copying",       argKey: "source" },
-  move_file:   { verb: "Moving",        argKey: "source" },
-  grep:        { verb: "Searching",     argKey: "pattern" },
-  glob:        { verb: "Finding files", argKey: "pattern" },
+  copy_file:        { verb: "Copying",          argKey: "source" },
+  move_file:        { verb: "Moving",           argKey: "source" },
+  grep:             { verb: "Searching",        argKey: "pattern" },
+  glob:             { verb: "Finding files",    argKey: "pattern" },
+  find_definition:  { verb: "Finding definition", argKey: "symbol" },
+  find_references:  { verb: "Finding references", argKey: "symbol" },
 };
 
 function toolProgressLabel(tool: string, args: Record<string, unknown>): string {

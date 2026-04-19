@@ -4,6 +4,10 @@ import { LamiaChatProvider } from "./chatProvider";
 import { LamiaDefinitionProvider } from "./definitionProvider";
 import { LamiaCompletionProvider } from "./completionProvider";
 import { LamiaRunCodeLensProvider } from "./runCodeLensProvider";
+import { LamiaHoverProvider } from "./hoverProvider";
+import { LamiaDocumentSymbolProvider } from "./documentSymbolProvider";
+import { LamiaReferenceProvider } from "./referenceProvider";
+import { LamiaSignatureHelpProvider } from "./signatureHelpProvider";
 import { invalidateSymbols } from "./symbolIndex";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
 import { startWatching } from "./fileContext";
@@ -35,6 +39,32 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCompletionItemProvider(
       { language: "lamia" },
       completionProvider,
+      "(", ",",
+    ),
+  );
+
+  const hoverProvider = new LamiaHoverProvider();
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider({ language: "lamia" }, hoverProvider),
+    vscode.languages.registerHoverProvider({ language: "lamia-prompt" }, hoverProvider),
+  );
+
+  const symbolProvider = new LamiaDocumentSymbolProvider();
+  context.subscriptions.push(
+    vscode.languages.registerDocumentSymbolProvider({ language: "lamia" }, symbolProvider),
+    vscode.languages.registerDocumentSymbolProvider({ language: "lamia-prompt" }, symbolProvider),
+  );
+
+  const refProvider = new LamiaReferenceProvider();
+  context.subscriptions.push(
+    vscode.languages.registerReferenceProvider({ language: "lamia" }, refProvider),
+    vscode.languages.registerReferenceProvider({ language: "lamia-prompt" }, refProvider),
+  );
+
+  context.subscriptions.push(
+    vscode.languages.registerSignatureHelpProvider(
+      { language: "lamia" },
+      new LamiaSignatureHelpProvider(),
       "(", ",",
     ),
   );

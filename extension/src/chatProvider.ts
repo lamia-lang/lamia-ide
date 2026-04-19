@@ -86,7 +86,9 @@ const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia 
   "Do NOT add YAML front matter (---name/model/temperature---) unless the file already has it. " +
   "Read the file first, then change only what the user asked for. " +
   "When asked to copy or move files/directories, ALWAYS use copy_file or move_file tools — never recreate files manually. " +
-  "Use grep to search for patterns in code and glob to find files by name.";
+  "Use grep to search for patterns in code and glob to find files by name. " +
+  "You have browser tools (browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_wait) " +
+  "for web testing and automation. Use them when the user asks to test, verify, or interact with web pages.";
 
 const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   get_docs:    { verb: "Reading docs",  argKey: "topic" },
@@ -99,8 +101,14 @@ const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
   move_file:        { verb: "Moving",           argKey: "source" },
   grep:             { verb: "Searching",        argKey: "pattern" },
   glob:             { verb: "Finding files",    argKey: "pattern" },
-  find_definition:  { verb: "Finding definition", argKey: "symbol" },
-  find_references:  { verb: "Finding references", argKey: "symbol" },
+  find_definition:    { verb: "Finding definition",  argKey: "symbol" },
+  find_references:    { verb: "Finding references",  argKey: "symbol" },
+  browser_navigate:   { verb: "Navigating to",       argKey: "url" },
+  browser_click:      { verb: "Clicking",            argKey: "selector" },
+  browser_type:       { verb: "Typing into",         argKey: "selector" },
+  browser_get_text:   { verb: "Reading page text",   argKey: "selector" },
+  browser_screenshot: { verb: "Taking screenshot" },
+  browser_wait:       { verb: "Waiting for",         argKey: "selector" },
 };
 
 function toolProgressLabel(tool: string, args: Record<string, unknown>): string {
@@ -210,6 +218,25 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
 
     return meaningful.map(m => ({ role: m.role, text: m.text }));
+  }
+
+  private _savePartialProgress(tools: Array<{ tool: string; label: string }>, errorText: string): void {
+    if (tools.length > 0) {
+      const summary = tools.map(t => `- ${t.label} \u2713`).join("\n");
+      const partialMsg: ChatMessage = {
+        role: "assistant",
+        text: `Completed steps before the error:\n${summary}`,
+        ts: Date.now(),
+      };
+      this._chat.messages.push(partialMsg);
+    }
+    const errorMsg: ChatMessage = {
+      role: "error",
+      text: errorText,
+      ts: Date.now(),
+    };
+    this._chat.messages.push(errorMsg);
+    saveChat(this._chat);
   }
 
   private _maybeCompressInBackground(): void {
@@ -354,6 +381,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       case "send": {
         this._generating = true;
         this._post({ type: "thinking", active: true });
+        const completedTools: Array<{ tool: string; label: string }> = [];
         try {
           const proc = await this._ensureProcess();
 
@@ -376,6 +404,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             files,
             messages: history,
             onToolUse: (tool, args) => {
+              completedTools.push({ tool, label: toolProgressLabel(tool, args) });
               this._post({
                 type: "toolProgress",
                 tool,
@@ -410,13 +439,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
               this._lastFileWrites = response.files;
             }
           } else if (response.type === "error") {
-            const errorMsg: ChatMessage = {
-              role: "error",
-              text: response.message || "Unknown error",
-              ts: Date.now(),
-            };
-            this._chat.messages.push(errorMsg);
-            saveChat(this._chat);
+            this._savePartialProgress(completedTools, response.message || "Unknown error");
             this._post({ type: "error", text: response.message || "Unknown error" });
           }
         } catch (err: any) {
@@ -429,6 +452,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                 + "Please install Python and restart the IDE.",
             });
           } else {
+            this._savePartialProgress(completedTools, err.message);
             this._post({ type: "error", text: err.message });
           }
         } finally {

@@ -1011,7 +1011,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       <div id="mention-popup" class="hidden"></div>
     </div>
     <div id="input-footer">
-      <span id="input-hint">Shift+Enter newline &middot; @ to attach files &middot; drop files</span>
+      <span id="input-hint">Shift+Enter newline &middot; @ to attach files</span>
       <button id="stop-btn">Stop &#9632;</button>
       <button id="send-btn">Send &#8594;</button>
     </div>

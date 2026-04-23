@@ -12,6 +12,8 @@ import { invalidateSymbols } from "./symbolIndex";
 import { writeIdePath, ensureLamia, isPythonAvailable, isLamiaReady, showNoPythonWarning } from "./lamiaInstaller";
 import { startWatching } from "./fileContext";
 import { setLastCopied } from "./clipboardStore";
+import { LamiaDebugConfigProvider } from "./lamiaDebugConfigProvider";
+import { LamiaDebugSession } from "./lamiaDebugSession";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -146,6 +148,21 @@ export function activate(context: vscode.ExtensionContext) {
         chatProvider.switchProjectIfNeeded(editor.document.uri.fsPath);
       }
     })
+  );
+
+  // ── Debug adapter ────────────────────────────────────────────────
+  const debugProvider = new LamiaDebugConfigProvider();
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider("lamia", debugProvider),
+  );
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory("lamia", {
+      createDebugAdapterDescriptor(): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
+        return new vscode.DebugAdapterInlineImplementation(
+          new LamiaDebugSession(),
+        );
+      },
+    }),
   );
 
   setTimeout(() => {

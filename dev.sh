@@ -65,6 +65,25 @@ if [ ! -d "${RESOURCES_DIR}" ]; then
     exit 1
 fi
 
+# ── Clear stale Python bytecode from lamia engine ────────────────────────────
+# Try multiple methods to locate the lamia package directory.
+LAMIA_PKG=""
+# Method 1: use the same Python that lamia CLI runs under
+LAMIA_PY="$(head -1 "$(command -v lamia 2>/dev/null || true)" 2>/dev/null | sed 's/^#!//' || true)"
+if [ -n "${LAMIA_PY}" ] && [ -x "${LAMIA_PY}" ]; then
+    LAMIA_PKG="$("${LAMIA_PY}" -c "import lamia, os; print(os.path.dirname(lamia.__file__))" 2>/dev/null || true)"
+fi
+# Method 2: sibling lamia repo (common dev layout)
+if [ -z "${LAMIA_PKG}" ]; then
+    _CANDIDATE="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/lamia/lamia"
+    [ -f "${_CANDIDATE}/__init__.py" ] && LAMIA_PKG="${_CANDIDATE}"
+fi
+if [ -n "${LAMIA_PKG}" ] && [ -d "${LAMIA_PKG}" ]; then
+    echo "Clearing lamia __pycache__..."
+    find "${LAMIA_PKG}" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+    echo "  OK (${LAMIA_PKG})"
+fi
+
 # ── Compile extension TypeScript ──────────────────────────────────────────────
 echo "Compiling extension..."
 (cd extension && ./node_modules/.bin/tsc -p ./ 2>&1) \

@@ -183,6 +183,62 @@
         ]
       }
     },
+    "breakpoints": [
+      { "language": "lamia" }
+    ],
+    "debuggers": [
+      {
+        "type": "lamia",
+        "languages": ["lamia"],
+        "label": "Lamia Debug",
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path of the .lm file to debug",
+                "default": "${file}"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory for the program",
+                "default": "${fileDirname}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Pause on the first executable line",
+                "default": true
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "lamia",
+            "request": "launch",
+            "name": "Debug Lamia File",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "stopOnEntry": true
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Lamia: Debug Current File",
+            "description": "Debug the current .lm file with step-by-step execution",
+            "body": {
+              "type": "lamia",
+              "request": "launch",
+              "name": "Debug Lamia File",
+              "program": "^\"\\${file}\"",
+              "cwd": "^\"\\${fileDirname}\"",
+              "stopOnEntry": true
+            }
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "Lamia",
       "properties": {

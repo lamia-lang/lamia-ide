@@ -54,10 +54,42 @@ export function saveChat(chat: Chat): void {
   if (chat.messages.length > 0 && chat.title === "New Chat") {
     const first = chat.messages.find((m) => m.role === "user");
     if (first) {
-      chat.title = first.text.slice(0, 60).replace(/\n/g, " ");
+      chat.title = summarizeForTitle(first.text);
     }
   }
   fs.writeFileSync(chatPath(chat.id), JSON.stringify(chat, null, 2), "utf8");
+}
+
+function summarizeForTitle(text: string): string {
+  let clean = text.replace(/\n+/g, " ").trim();
+
+  if (!clean || !/[a-zA-Z]{2,}/.test(clean)) {
+    return "General inquiry";
+  }
+
+  clean = clean
+    .replace(/<[^>]+>/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`]+`/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!clean || !/[a-zA-Z]{2,}/.test(clean)) {
+    return "General inquiry";
+  }
+
+  const sentenceEnd = clean.search(/[.!?]\s/);
+  if (sentenceEnd > 0 && sentenceEnd < 80) {
+    return clean.slice(0, sentenceEnd + 1);
+  }
+
+  if (clean.length <= 60) {
+    return clean;
+  }
+
+  const truncated = clean.slice(0, 57);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return (lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated) + "...";
 }
 
 export function loadLatestChat(): Chat | null {

@@ -76,6 +76,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "lamia.debug",
+        "title": "Lamia: Debug Current File",
+        "icon": "$(bug)"
+      },
+      {
         "command": "lamia.openChat",
         "title": "Lamia: Open Chat Panel"
       },
@@ -90,11 +95,21 @@
           "command": "lamia.run",
           "when": "resourceExtname == .lm",
           "group": "navigation"
+        },
+        {
+          "command": "lamia.debug",
+          "when": "resourceExtname == .lm",
+          "group": "2_debug"
         }
       ],
       "explorer/context": [
         {
           "command": "lamia.run",
+          "when": "resourceExtname == .lm",
+          "group": "navigation"
+        },
+        {
+          "command": "lamia.debug",
           "when": "resourceExtname == .lm",
           "group": "navigation"
         }
@@ -208,7 +223,7 @@
               "stopOnEntry": {
                 "type": "boolean",
                 "description": "Pause on the first executable line",
-                "default": true
+                "default": false
               }
             }
           }
@@ -220,7 +235,7 @@
             "name": "Debug Lamia File",
             "program": "${file}",
             "cwd": "${fileDirname}",
-            "stopOnEntry": true
+            "stopOnEntry": false
           }
         ],
         "configurationSnippets": [
@@ -233,7 +248,7 @@
               "name": "Debug Lamia File",
               "program": "^\"\\${file}\"",
               "cwd": "^\"\\${fileDirname}\"",
-              "stopOnEntry": true
+              "stopOnEntry": false
             }
           }
         ]

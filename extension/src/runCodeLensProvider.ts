@@ -10,6 +10,11 @@ export class LamiaRunCodeLensProvider implements vscode.CodeLensProvider {
         command: "lamia.run",
         tooltip: "Run this .lm file with Lamia",
       }),
+      new vscode.CodeLens(topLine, {
+        title: "$(bug) Debug",
+        command: "lamia.debug",
+        tooltip: "Debug this .lm file with Lamia",
+      }),
     ];
   }
 }

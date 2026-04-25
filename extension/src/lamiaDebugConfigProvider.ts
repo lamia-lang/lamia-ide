@@ -17,7 +17,7 @@ export class LamiaDebugConfigProvider
         config.request = "launch";
         config.program = editor.document.uri.fsPath;
         config.cwd = path.dirname(editor.document.uri.fsPath);
-        config.stopOnEntry = true;
+        config.stopOnEntry = false;
       }
     }
 

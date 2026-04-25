@@ -14,6 +14,7 @@ import { startWatching } from "./fileContext";
 import { setLastCopied } from "./clipboardStore";
 import { LamiaDebugConfigProvider } from "./lamiaDebugConfigProvider";
 import { LamiaDebugSession } from "./lamiaDebugSession";
+import { resolveLamiaCli } from "./lamiaDebugRuntime";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -112,13 +113,36 @@ export function activate(context: vscode.ExtensionContext) {
       const filePath = editor.document.fileName;
       const fileDir = path.dirname(filePath);
       const fileName = path.basename(filePath);
+      const cli = resolveLamiaCli();
 
       const terminal =
         vscode.window.terminals.find((t) => t.name === "Lamia") ??
         vscode.window.createTerminal({ name: "Lamia", cwd: fileDir });
 
       terminal.show();
-      terminal.sendText(`cd "${fileDir}" && lamia "${fileName}"`);
+      terminal.sendText(`cd "${fileDir}" && "${cli}" "${fileName}"`);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.debug", () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !editor.document.fileName.endsWith(".lm")) {
+        vscode.window.showWarningMessage("Open a .lm file to debug it");
+        return;
+      }
+      const filePath = editor.document.uri.fsPath;
+      vscode.debug.startDebugging(
+        vscode.workspace.getWorkspaceFolder(editor.document.uri),
+        {
+          type: "lamia",
+          request: "launch",
+          name: "Debug Lamia File",
+          program: filePath,
+          cwd: path.dirname(filePath),
+          stopOnEntry: false,
+        },
+      );
     })
   );
 

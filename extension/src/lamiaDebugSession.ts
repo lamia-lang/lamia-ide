@@ -38,10 +38,11 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
 
   private _runtime = new LamiaDebugRuntime();
   private _runtimeReady = false;
+  private _runtimeEventsWired = false;
 
   private _launchProgram = "";
   private _launchCwd = "";
-  private _stopOnEntry = true;
+  private _stopOnEntry = false;
 
   private _pendingBp = new Map<string, number[]>();
 
@@ -113,6 +114,7 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
         break;
       case "disconnect":
         this._runtime.disconnect();
+        this._runtimeReady = false;
         this._respond(msg, {});
         break;
       case "setExceptionBreakpoints":
@@ -126,7 +128,10 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
   // ── DAP handlers ─────────────────────────────────────────────────
 
   private _onInitialize(msg: DapMessage): void {
-    this._wireRuntimeEvents();
+    if (!this._runtimeEventsWired) {
+      this._wireRuntimeEvents();
+      this._runtimeEventsWired = true;
+    }
     this._respond(msg, {
       supportsConfigurationDoneRequest: true,
       supportsFunctionBreakpoints: false,
@@ -150,7 +155,7 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
     this._launchProgram = args.program as string;
     this._launchCwd =
       (args.cwd as string) || path.dirname(this._launchProgram);
-    this._stopOnEntry = args.stopOnEntry !== false;
+    this._stopOnEntry = args.stopOnEntry === true;
     this._respond(msg, {});
   }
 
@@ -184,6 +189,7 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
       this._launchProgram,
       this._launchCwd,
       this._stopOnEntry,
+      this._pendingBp,
     );
   }
 
@@ -233,14 +239,7 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
   private _wireRuntimeEvents(): void {
     this._runtime.on("initialized", () => {
       this._runtimeReady = true;
-      for (const [file, lines] of this._pendingBp) {
-        this._runtime.setBreakpointsFireAndForget(file, lines);
-      }
-      if (this._stopOnEntry) {
-        this._runtime.stepIn();
-      } else {
-        this._runtime.continue();
-      }
+      this._runtime.configurationDone();
     });
 
     this._runtime.on("stopped", (ev: RuntimeStoppedEvent) => {

@@ -42,7 +42,14 @@ export class LamiaDebugRuntime extends EventEmitter {
     (body: Record<string, unknown>) => void
   >();
 
-  start(program: string, cwd: string, _stopOnEntry: boolean): void {
+  start(
+    program: string,
+    cwd: string,
+    stopOnEntry: boolean,
+    breakpoints?: Map<string, number[]>,
+  ): void {
+    this._killProcess();
+
     const lamiaCli = this._resolveLamiaCli();
 
     const env: Record<string, string> = Object.fromEntries(
@@ -62,9 +69,19 @@ export class LamiaDebugRuntime extends EventEmitter {
       env.VIRTUAL_ENV = path.join(os.homedir(), ".lamia", "venv");
     }
 
-    this.emit("output", "console", `Launching: ${lamiaCli} debug "${program}" --json\n`);
+    const args = ["debug", program, "--json"];
+    if (stopOnEntry) {
+      args.push("--stop-on-entry");
+    }
+    if (breakpoints) {
+      for (const lines of breakpoints.values()) {
+        for (const line of lines) {
+          args.push("--break", String(line));
+        }
+      }
+    }
 
-    this._proc = spawn(lamiaCli, ["debug", program, "--json"], {
+    this._proc = spawn(lamiaCli, args, {
       cwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -179,6 +196,9 @@ export class LamiaDebugRuntime extends EventEmitter {
   pause(): void {
     this._send({ command: "pause" });
   }
+  configurationDone(): void {
+    this._send({ command: "configurationDone" });
+  }
 
   setBreakpointsFireAndForget(file: string, lines: number[]): void {
     this._send({ command: "setBreakpoints", file, lines });
@@ -213,43 +233,56 @@ export class LamiaDebugRuntime extends EventEmitter {
 
   disconnect(): void {
     this._send({ command: "disconnect" });
-    setTimeout(() => {
-      if (this._proc) {
-        this._proc.kill("SIGTERM");
-        this._proc = null;
-      }
-    }, 2000);
+    this._killProcess();
   }
 
   // ── helpers ──────────────────────────────────────────────────────
 
-  /**
-   * Find the `lamia` CLI executable.
-   * Strategy:
-   *  1. Check ~/.lamia/venv/bin/lamia
-   *  2. Check PATH via `which lamia`
-   *  3. Fall back to bare "lamia" (let the OS resolve it)
-   */
-  private _resolveLamiaCli(): string {
-    const venvLamia = path.join(
-      os.homedir(),
-      ".lamia",
-      "venv",
-      process.platform === "win32" ? "Scripts" : "bin",
-      process.platform === "win32" ? "lamia.exe" : "lamia",
-    );
-    if (fs.existsSync(venvLamia)) return venvLamia;
-
-    try {
-      const resolved = execFileSync("which", ["lamia"], {
-        encoding: "utf8",
-        timeout: 3000,
-      }).trim();
-      if (resolved && fs.existsSync(resolved)) return resolved;
-    } catch {
-      // `which` not found or lamia not on PATH
+  private _killProcess(): void {
+    if (this._proc) {
+      this._proc.removeAllListeners();
+      this._proc.stdout?.removeAllListeners();
+      this._proc.stderr?.removeAllListeners();
+      this._proc.kill("SIGTERM");
+      this._proc = null;
     }
-
-    return "lamia";
+    this._buffer = "";
+    this._rejectPending("Process killed");
   }
+
+  private _resolveLamiaCli(): string {
+    return resolveLamiaCli();
+  }
+}
+
+/**
+ * Find the `lamia` CLI executable.
+ * Strategy:
+ *  1. Check ~/.lamia/venv/bin/lamia
+ *  2. Check PATH via `which lamia`
+ *  3. Fall back to bare "lamia" (let the OS resolve it)
+ *
+ * Shared by both Debug and Run modes.
+ */
+export function resolveLamiaCli(): string {
+  const venvLamia = path.join(
+    os.homedir(),
+    ".lamia",
+    "venv",
+    process.platform === "win32" ? "Scripts" : "bin",
+    process.platform === "win32" ? "lamia.exe" : "lamia",
+  );
+  if (fs.existsSync(venvLamia)) return venvLamia;
+
+  try {
+    const resolved = execFileSync("which", ["lamia"], {
+      encoding: "utf8",
+      timeout: 3000,
+    }).trim();
+    if (resolved && fs.existsSync(resolved)) return resolved;
+  } catch {
+    // `which` not found or lamia not on PATH
+  }
+
+  return "lamia";
 }

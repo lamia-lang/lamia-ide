@@ -11,7 +11,9 @@
     "Programming Languages",
     "Snippets"
   ],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "languages": [
       {
@@ -157,58 +159,87 @@
         "textMateRules": [
           {
             "scope": "entity.name.function.agent.lamia",
-            "settings": { "foreground": "#DCDCAA", "fontStyle": "bold" }
+            "settings": {
+              "foreground": "#DCDCAA",
+              "fontStyle": "bold"
+            }
           },
           {
             "scope": "entity.name.function.call.python",
-            "settings": { "foreground": "#DCDCAA" }
+            "settings": {
+              "foreground": "#DCDCAA"
+            }
           },
           {
             "scope": "support.function.pydantic.python",
-            "settings": { "foreground": "#C586C0" }
+            "settings": {
+              "foreground": "#C586C0"
+            }
           },
           {
             "scope": "support.class.pydantic.python",
-            "settings": { "foreground": "#4EC9B0" }
+            "settings": {
+              "foreground": "#4EC9B0"
+            }
           },
           {
             "scope": "storage.type.lamia",
-            "settings": { "foreground": "#569CD6", "fontStyle": "bold" }
+            "settings": {
+              "foreground": "#569CD6",
+              "fontStyle": "bold"
+            }
           },
           {
             "scope": "entity.name.type.model.lamia",
-            "settings": { "foreground": "#4EC9B0" }
+            "settings": {
+              "foreground": "#4EC9B0"
+            }
           },
           {
             "scope": "keyword.operator.arrow.lamia",
-            "settings": { "foreground": "#569CD6" }
+            "settings": {
+              "foreground": "#569CD6"
+            }
           },
           {
             "scope": "variable.other.readwrite.lamia",
-            "settings": { "foreground": "#9CDCFE" }
+            "settings": {
+              "foreground": "#9CDCFE"
+            }
           },
           {
             "scope": "entity.name.tag.file-reference.lamia",
-            "settings": { "foreground": "#CE9178", "fontStyle": "italic" }
+            "settings": {
+              "foreground": "#CE9178",
+              "fontStyle": "italic"
+            }
           },
           {
             "scope": "meta.decorator.python",
-            "settings": { "foreground": "#DCDCAA" }
+            "settings": {
+              "foreground": "#DCDCAA"
+            }
           }
         ]
       }
     },
     "breakpoints": [
-      { "language": "lamia" }
+      {
+        "language": "lamia"
+      }
     ],
     "debuggers": [
       {
         "type": "lamia",
-        "languages": ["lamia"],
+        "languages": [
+          "lamia"
+        ],
         "label": "Lamia Debug",
         "configurationAttributes": {
           "launch": {
-            "required": ["program"],
+            "required": [
+              "program"
+            ],
             "properties": {
               "program": {
                 "type": "string",
@@ -273,11 +304,14 @@
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
     "@types/vscode": "^1.85.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.1.5"
   }
 }

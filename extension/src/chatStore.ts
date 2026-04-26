@@ -9,6 +9,19 @@ export interface ChatMessage {
   text: string;
   model?: string;
   tokens?: { input: number; output: number; total: number };
+  turnContext?: {
+    toolCalls?: Array<{
+      tool: string;
+      label?: string;
+      args?: Record<string, unknown>;
+    }>;
+    fileWrites?: Array<{
+      path: string;
+      action: "create" | "modify" | "delete";
+      content?: string;
+      original?: string;
+    }>;
+  };
   ts: number;
 }
 

@@ -149,6 +149,12 @@ const HISTORY_CHAR_BUDGET = 40_000;
 const RECENT_TURNS_KEEP = 6;
 const COMPRESS_THRESHOLD = 6_000;
 
+type ToolCallRecord = {
+  tool: string;
+  label: string;
+  args: Record<string, unknown>;
+};
+
 export class LamiaChatProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "lamia.chatView";
   private _view?: vscode.WebviewView;
@@ -204,7 +210,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       .filter(m => m.role !== "error");
     if (meaningful.length === 0) { return []; }
     if (meaningful.length <= RECENT_TURNS_KEEP) {
-      return meaningful.map(m => ({ role: m.role, text: m.text }));
+      return meaningful.map(m => ({ role: m.role, text: this._messageTextForHistory(m) }));
     }
 
     const older = meaningful.slice(0, -RECENT_TURNS_KEEP);
@@ -213,14 +219,29 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     if (this._historySummary && this._summarizedCount >= older.length) {
       return [
         { role: "system", text: this._historySummary },
-        ...recent.map(m => ({ role: m.role, text: m.text })),
+        ...recent.map(m => ({ role: m.role, text: this._messageTextForHistory(m) })),
       ];
     }
 
-    return meaningful.map(m => ({ role: m.role, text: m.text }));
+    return meaningful.map(m => ({ role: m.role, text: this._messageTextForHistory(m) }));
   }
 
-  private _savePartialProgress(tools: Array<{ tool: string; label: string }>, errorText: string): void {
+  private _messageTextForHistory(message: ChatMessage): string {
+    if (message.role !== "assistant" || !message.turnContext) {
+      return message.text;
+    }
+
+    const hasToolCalls = Array.isArray(message.turnContext.toolCalls) && message.turnContext.toolCalls.length > 0;
+    const hasFileWrites = Array.isArray(message.turnContext.fileWrites) && message.turnContext.fileWrites.length > 0;
+    if (!hasToolCalls && !hasFileWrites) {
+      return message.text;
+    }
+
+    const contextJson = JSON.stringify(message.turnContext, null, 2);
+    return `${message.text}\n\n<turn_context_json>\n${contextJson}\n</turn_context_json>`;
+  }
+
+  private _savePartialProgress(tools: ToolCallRecord[], errorText: string): void {
     if (tools.length > 0) {
       const summary = tools.map(t => `- ${t.label} \u2713`).join("\n");
       const partialMsg: ChatMessage = {
@@ -254,7 +275,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     if (this._historySummary && totalChars < HISTORY_CHAR_BUDGET) { return; }
 
     this._compressing = true;
-    const olderForSummary = older.map(m => ({ role: m.role, text: m.text }));
+    const olderForSummary = older;
     const existingSummary = this._historySummary;
     const countToSummarize = older.length;
 
@@ -266,7 +287,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           block += `[Previous summary]\n${existingSummary}\n\n`;
         }
         block += olderForSummary
-          .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+          .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${this._messageTextForHistory(m)}`)
           .join("\n\n");
 
         const summaryPrompt =
@@ -381,7 +402,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       case "send": {
         this._generating = true;
         this._post({ type: "thinking", active: true });
-        const completedTools: Array<{ tool: string; label: string }> = [];
+        const completedTools: ToolCallRecord[] = [];
         try {
           // Keep backend config in sync with the model used for this turn.
           if (message.model) {
@@ -415,7 +436,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             files,
             messages: history,
             onToolUse: (tool, args) => {
-              completedTools.push({ tool, label: toolProgressLabel(tool, args) });
+              completedTools.push({ tool, label: toolProgressLabel(tool, args), args });
               this._post({
                 type: "toolProgress",
                 tool,
@@ -430,6 +451,19 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
               text: response.text,
               model: response.model,
               tokens: response.tokens,
+              turnContext: {
+                toolCalls: completedTools.map(t => ({
+                  tool: t.tool,
+                  label: t.label,
+                  args: t.args,
+                })),
+                fileWrites: response.files?.map(f => ({
+                  path: f.path,
+                  action: f.action,
+                  content: f.content,
+                  original: f.original,
+                })),
+              },
               ts: Date.now(),
             };
             this._chat.messages.push(assistantMsg);
@@ -1176,6 +1210,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       for (const msg of messages) {
         const meta = formatMeta(msg.model, msg.tokens);
         appendMessage(msg.role, msg.text, meta || undefined);
+        if (msg.role === "assistant" && msg.turnContext) {
+          if (Array.isArray(msg.turnContext.toolCalls) && msg.turnContext.toolCalls.length > 0) {
+            renderCompletedToolCalls(msg.turnContext.toolCalls);
+          }
+          if (Array.isArray(msg.turnContext.fileWrites) && msg.turnContext.fileWrites.length > 0) {
+            renderFileChanges(msg.turnContext.fileWrites);
+          }
+        }
       }
     }
 
@@ -1222,6 +1264,21 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         s.replaceWith(check);
       });
       toolProgressEl = null;
+    }
+
+    function renderCompletedToolCalls(toolCalls) {
+      const container = document.getElementById("chat-messages");
+      const wrapper = document.createElement("div");
+      wrapper.className = "tool-progress";
+      toolCalls.forEach(function(t) {
+        const step = document.createElement("div");
+        step.className = "tool-step";
+        const label = t && t.label ? t.label : (t && t.tool ? "Using tool: " + t.tool : "Using tool");
+        step.innerHTML = '<span class="ts-check">\\u2713</span><span>' + escapeHtml(label) + '</span>';
+        wrapper.appendChild(step);
+      });
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
     }
 
     // ── File changes ────────────────────────────────────────────────────

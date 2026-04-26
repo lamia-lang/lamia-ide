@@ -155,7 +155,9 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
     this._launchProgram = args.program as string;
     this._launchCwd =
       (args.cwd as string) || path.dirname(this._launchProgram);
-    this._stopOnEntry = args.stopOnEntry === true;
+    // Keep one consistent behavior across all entry points (file tab command,
+    // debug sidebar, and F5): run to breakpoints instead of stopping at line 1.
+    this._stopOnEntry = false;
     this._respond(msg, {});
   }
 
@@ -213,11 +215,13 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
   }
 
   private async _onVariables(msg: DapMessage): Promise<void> {
-    const vars = (await this._runtime.getVariables()).map((v) => ({
+    const args = (msg.arguments ?? {}) as { variablesReference?: number };
+    const requestedRef = args.variablesReference ?? 1;
+    const vars = (await this._runtime.getVariables(requestedRef)).map((v) => ({
       name: v.name,
       value: v.value,
       type: v.type,
-      variablesReference: 0,
+      variablesReference: v.variablesReference ?? 0,
     }));
     this._respond(msg, { variables: vars });
   }
@@ -230,7 +234,7 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
     this._respond(msg, {
       result: result.error ?? result.value ?? "",
       type: result.type,
-      variablesReference: 0,
+      variablesReference: result.variablesReference ?? 0,
     });
   }
 
@@ -239,6 +243,12 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
   private _wireRuntimeEvents(): void {
     this._runtime.on("initialized", () => {
       this._runtimeReady = true;
+      // Robustness: re-apply all pending breakpoints from adapter state
+      // before allowing execution to continue. This covers launch timing
+      // differences (e.g. debug sidebar start/restart flows).
+      for (const [file, lines] of this._pendingBp) {
+        this._runtime.setBreakpointsFireAndForget(file, lines);
+      }
       this._runtime.configurationDone();
     });
 

@@ -19,6 +19,7 @@ export interface RuntimeVariable {
   name: string;
   value: string;
   type: string;
+  variablesReference?: number;
 }
 
 export interface RuntimeStackFrame {
@@ -213,8 +214,8 @@ export class LamiaDebugRuntime extends EventEmitter {
     return (resp.breakpoints as number[]) ?? [];
   }
 
-  async getVariables(): Promise<RuntimeVariable[]> {
-    const resp = await this._request({ command: "getVariables" });
+  async getVariables(reference = 1): Promise<RuntimeVariable[]> {
+    const resp = await this._request({ command: "getVariables", reference });
     return (resp.variables as RuntimeVariable[]) ?? [];
   }
 
@@ -225,9 +226,11 @@ export class LamiaDebugRuntime extends EventEmitter {
 
   async evaluate(
     expression: string,
-  ): Promise<{ value?: string; type?: string; error?: string }> {
+  ): Promise<{ value?: string; type?: string; error?: string; variablesReference?: number }> {
     const resp = await this._request({ command: "evaluate", expression });
-    const result = resp.result as Record<string, string> | undefined;
+    const result = resp.result as
+      | { value?: string; type?: string; error?: string; variablesReference?: number }
+      | undefined;
     return result ?? { error: "no response" };
   }
 

@@ -153,6 +153,7 @@ type ToolCallRecord = {
   tool: string;
   label: string;
   args: Record<string, unknown>;
+  ts: number;
 };
 
 export class LamiaChatProvider implements vscode.WebviewViewProvider {
@@ -436,7 +437,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             files,
             messages: history,
             onToolUse: (tool, args) => {
-              completedTools.push({ tool, label: toolProgressLabel(tool, args), args });
+              completedTools.push({ tool, label: toolProgressLabel(tool, args), args, ts: Date.now() });
               this._post({
                 type: "toolProgress",
                 tool,
@@ -446,6 +447,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           });
 
           if (response.type === "response" && response.text) {
+            const responseTs = Date.now();
+            const fileWriteTs = responseTs + 1;
             const assistantMsg: ChatMessage = {
               role: "assistant",
               text: response.text,
@@ -456,15 +459,18 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                   tool: t.tool,
                   label: t.label,
                   args: t.args,
+                  ts: t.ts,
                 })),
-                fileWrites: response.files?.map(f => ({
+                responseTs,
+                fileWrites: response.files?.map((f, i) => ({
                   path: f.path,
                   action: f.action,
                   content: f.content,
                   original: f.original,
+                  ts: fileWriteTs + i,
                 })),
               },
-              ts: Date.now(),
+              ts: responseTs,
             };
             this._chat.messages.push(assistantMsg);
             saveChat(this._chat);
@@ -1208,15 +1214,45 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     function restoreMessages(messages) {
       if (!messages || messages.length === 0) return;
       for (const msg of messages) {
-        const meta = formatMeta(msg.model, msg.tokens);
-        appendMessage(msg.role, msg.text, meta || undefined);
-        if (msg.role === "assistant" && msg.turnContext) {
-          if (Array.isArray(msg.turnContext.toolCalls) && msg.turnContext.toolCalls.length > 0) {
-            renderCompletedToolCalls(msg.turnContext.toolCalls);
+        if (msg.role !== "assistant" || !msg.turnContext) {
+          const meta = formatMeta(msg.model, msg.tokens);
+          appendMessage(msg.role, msg.text, meta || undefined);
+          continue;
+        }
+        var tc = msg.turnContext;
+        var items = [];
+        if (Array.isArray(tc.toolCalls)) {
+          tc.toolCalls.forEach(function(t) {
+            items.push({ kind: "tool", data: t, ts: t.ts || 0 });
+          });
+        }
+        items.push({ kind: "response", data: msg, ts: tc.responseTs || msg.ts || 0 });
+        if (Array.isArray(tc.fileWrites)) {
+          tc.fileWrites.forEach(function(f) {
+            items.push({ kind: "file", data: f, ts: f.ts || 0 });
+          });
+        }
+        items.sort(function(a, b) { return a.ts - b.ts; });
+        var toolBatch = [];
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          if (it.kind === "tool") {
+            toolBatch.push(it.data);
+          } else {
+            if (toolBatch.length > 0) {
+              renderCompletedToolCalls(toolBatch);
+              toolBatch = [];
+            }
+            if (it.kind === "response") {
+              var meta = formatMeta(msg.model, msg.tokens);
+              appendMessage(msg.role, msg.text, meta || undefined);
+            } else if (it.kind === "file") {
+              renderFileChanges([it.data]);
+            }
           }
-          if (Array.isArray(msg.turnContext.fileWrites) && msg.turnContext.fileWrites.length > 0) {
-            renderFileChanges(msg.turnContext.fileWrites);
-          }
+        }
+        if (toolBatch.length > 0) {
+          renderCompletedToolCalls(toolBatch);
         }
       }
     }

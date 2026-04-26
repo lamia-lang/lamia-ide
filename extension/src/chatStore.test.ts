@@ -55,11 +55,12 @@ describe("chatStore roundtrip", () => {
       tokens: { input: 100, output: 50, total: 150 },
       turnContext: {
         toolCalls: [
-          { tool: "read_file", label: "Read qa_analyst.hu", args: { path: "team/qa_analyst.hu" } },
-          { tool: "write_file", label: "Write qa_analyst.hu", args: { path: "team/qa_analyst.hu", content: "new content" } },
+          { tool: "read_file", label: "Read qa_analyst.hu", args: { path: "team/qa_analyst.hu" }, ts: 1000 },
+          { tool: "write_file", label: "Write qa_analyst.hu", args: { path: "team/qa_analyst.hu", content: "new content" }, ts: 1001 },
         ],
+        responseTs: 1002,
       },
-      ts: Date.now(),
+      ts: 1002,
     };
     chat.messages.push(assistantMsg);
     saveChat(chat);
@@ -70,8 +71,10 @@ describe("chatStore roundtrip", () => {
     expect(msg.turnContext).toBeDefined();
     expect(msg.turnContext!.toolCalls).toHaveLength(2);
     expect(msg.turnContext!.toolCalls![0].tool).toBe("read_file");
+    expect(msg.turnContext!.toolCalls![0].ts).toBe(1000);
     expect(msg.turnContext!.toolCalls![0].args).toEqual({ path: "team/qa_analyst.hu" });
     expect(msg.turnContext!.toolCalls![1].tool).toBe("write_file");
+    expect(msg.turnContext!.responseTs).toBe(1002);
   });
 
   it("preserves turnContext with fileWrites through save/load", () => {
@@ -85,21 +88,24 @@ describe("chatStore roundtrip", () => {
       text: "Created the file.",
       turnContext: {
         toolCalls: [],
+        responseTs: 2000,
         fileWrites: [
           {
             path: "src/utils.ts",
             action: "create",
             content: "export function foo() {}",
+            ts: 2001,
           },
           {
             path: "src/main.ts",
             action: "modify",
             content: "import { foo } from './utils';",
             original: "// main",
+            ts: 2002,
           },
         ],
       },
-      ts: Date.now(),
+      ts: 2000,
     };
     chat.messages.push(assistantMsg);
     saveChat(chat);
@@ -112,6 +118,7 @@ describe("chatStore roundtrip", () => {
     expect(msg.turnContext!.fileWrites![0].path).toBe("src/utils.ts");
     expect(msg.turnContext!.fileWrites![0].action).toBe("create");
     expect(msg.turnContext!.fileWrites![0].content).toBe("export function foo() {}");
+    expect(msg.turnContext!.fileWrites![0].ts).toBe(2001);
     expect(msg.turnContext!.fileWrites![1].original).toBe("// main");
   });
 
@@ -124,10 +131,11 @@ describe("chatStore roundtrip", () => {
       role: "assistant",
       text: "Done.",
       turnContext: {
-        toolCalls: [{ tool: "read_file", args: { path: "x.ts" } }],
-        fileWrites: [{ path: "x.ts", action: "modify" as const, content: "new" }],
+        toolCalls: [{ tool: "read_file", args: { path: "x.ts" }, ts: 3000 }],
+        responseTs: 3001,
+        fileWrites: [{ path: "x.ts", action: "modify" as const, content: "new", ts: 3002 }],
       },
-      ts: Date.now(),
+      ts: 3001,
     });
     saveChat(chat);
 
@@ -136,8 +144,11 @@ describe("chatStore roundtrip", () => {
     expect(assistantRaw).toHaveProperty("turnContext");
     expect(assistantRaw.turnContext).toHaveProperty("toolCalls");
     expect(assistantRaw.turnContext.toolCalls).toHaveLength(1);
+    expect(assistantRaw.turnContext.toolCalls[0].ts).toBe(3000);
+    expect(assistantRaw.turnContext).toHaveProperty("responseTs", 3001);
     expect(assistantRaw.turnContext).toHaveProperty("fileWrites");
     expect(assistantRaw.turnContext.fileWrites).toHaveLength(1);
+    expect(assistantRaw.turnContext.fileWrites[0].ts).toBe(3002);
   });
 
   it("old chats without turnContext load without errors", () => {
@@ -179,11 +190,11 @@ describe("chatStore roundtrip", () => {
 
     chat.messages.push({ role: "user", text: "improve qa_analyst", ts: Date.now() });
 
-    // Simulate what chatProvider.ts does at lines 448-470
     const completedTools = [
-      { tool: "read_file", label: "Read qa_analyst.hu", args: { path: "team/qa_analyst.hu" } },
-      { tool: "write_file", label: "Write qa_analyst.hu", args: { path: "team/qa_analyst.hu", content: "improved" } },
+      { tool: "read_file", label: "Read qa_analyst.hu", args: { path: "team/qa_analyst.hu" }, ts: 5000 },
+      { tool: "write_file", label: "Write qa_analyst.hu", args: { path: "team/qa_analyst.hu", content: "improved" }, ts: 5001 },
     ];
+    const responseTs = 5002;
     const responseFiles = [
       { path: "team/qa_analyst.hu", action: "modify" as const, content: "improved", original: "old content" },
     ];
@@ -198,15 +209,18 @@ describe("chatStore roundtrip", () => {
           tool: t.tool,
           label: t.label,
           args: t.args,
+          ts: t.ts,
         })),
-        fileWrites: responseFiles?.map(f => ({
+        responseTs,
+        fileWrites: responseFiles?.map((f, i) => ({
           path: f.path,
           action: f.action,
           content: f.content,
           original: f.original,
+          ts: responseTs + 1 + i,
         })),
       },
-      ts: Date.now(),
+      ts: responseTs,
     };
 
     chat.messages.push(assistantMsg);
@@ -238,7 +252,8 @@ describe("chatStore roundtrip", () => {
       role: "assistant",
       text: "latest response",
       turnContext: {
-        toolCalls: [{ tool: "grep", args: { pattern: "foo" } }],
+        toolCalls: [{ tool: "grep", args: { pattern: "foo" }, ts: 6000 }],
+        responseTs: 6001,
       },
       ts: Date.now(),
     });

@@ -14,13 +14,16 @@ export interface ChatMessage {
       tool: string;
       label?: string;
       args?: Record<string, unknown>;
+      ts?: number;
     }>;
     fileWrites?: Array<{
       path: string;
       action: "create" | "modify" | "delete";
       content?: string;
       original?: string;
+      ts?: number;
     }>;
+    responseTs?: number;
   };
   ts: number;
 }

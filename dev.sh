@@ -65,23 +65,20 @@ if [ ! -d "${RESOURCES_DIR}" ]; then
     exit 1
 fi
 
-# ── Clear stale Python bytecode from lamia engine ────────────────────────────
-# Try multiple methods to locate the lamia package directory.
-LAMIA_PKG=""
-# Method 1: use the same Python that lamia CLI runs under
-LAMIA_PY="$(head -1 "$(command -v lamia 2>/dev/null || true)" 2>/dev/null | sed 's/^#!//' || true)"
-if [ -n "${LAMIA_PY}" ] && [ -x "${LAMIA_PY}" ]; then
-    LAMIA_PKG="$("${LAMIA_PY}" -c "import lamia, os; print(os.path.dirname(lamia.__file__))" 2>/dev/null || true)"
-fi
-# Method 2: sibling lamia repo (common dev layout)
-if [ -z "${LAMIA_PKG}" ]; then
-    _CANDIDATE="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/lamia/lamia"
-    [ -f "${_CANDIDATE}/__init__.py" ] && LAMIA_PKG="${_CANDIDATE}"
-fi
-if [ -n "${LAMIA_PKG}" ] && [ -d "${LAMIA_PKG}" ]; then
-    echo "Clearing lamia __pycache__..."
-    find "${LAMIA_PKG}" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-    echo "  OK (${LAMIA_PKG})"
+# ── Sync lamia engine from local source ───────────────────────────────────────
+# Always use the sibling lamia repo so dev.sh runs latest uncommitted code.
+LAMIA_REPO="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/lamia"
+LAMIA_VENV="${HOME}/.lamia/venv"
+
+if [ -f "${LAMIA_REPO}/pyproject.toml" ] && [ -d "${LAMIA_VENV}" ]; then
+    echo "Syncing lamia engine from local source..."
+    "${LAMIA_VENV}/bin/pip" install -e "${LAMIA_REPO}" --quiet 2>&1 \
+        && echo "  OK (editable: ${LAMIA_REPO})" \
+        || echo "  Warning: pip install -e failed; engine may be stale"
+    find "${LAMIA_REPO}/lamia" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+elif [ -d "${LAMIA_VENV}" ]; then
+    echo "Warning: sibling lamia repo not found at ${LAMIA_REPO}"
+    echo "  Engine will use whatever version is installed in the venv."
 fi
 
 # ── Compile extension TypeScript ──────────────────────────────────────────────
@@ -95,6 +92,7 @@ echo "Compiling extension..."
 # secondarySideBar viewsContainers contribution is honoured by VS Code.
 # Also remove any stale copy from the app bundle to avoid conflicts.
 rm -rf "${EXTENSIONS_DIR}/lamia-language" 2>/dev/null || true
+rm -rf "${EXTENSIONS_DIR}/lamia-ide" 2>/dev/null || true
 echo "Applying extension..."
 APP_NAME_SLUG="$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
 USER_EXT_BASE="${HOME}/.${APP_NAME_SLUG}/extensions"

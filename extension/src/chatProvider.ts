@@ -49,6 +49,7 @@ type HostMessage =
   | { type: "error"; text: string }
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
+  | { type: "toolResult"; tool: string; success: boolean }
   | { type: "fileChanges"; files: { path: string; action: string; original?: string }[] }
   | { type: "populateInput"; text: string }
   | { type: "stopped" }
@@ -74,18 +75,18 @@ type HostMessage =
 
 const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
   "If the user asks for code changes, perform the changes using tools. Do not only propose code. " +
-  "When modifying or creating files, ALWAYS use your file tools — never just show code in your response. " +
+  "When modifying or creating files, ALWAYS use your file tools - never just show code in your response. " +
   "IMPORTANT: When editing existing files, make MINIMAL targeted changes. " +
   "Prefer using .hu files for code changes when possible. Only complicated logic like orchestration changes will be in .lm files. " +
   "Use your tools to look up the relevant documentation before answering. " +
   "Do not create new files if you can edit existing ones. " +
-  "When writing .lm files, use Lamia syntax as much as possible — as few plain Python lines as possible.\n\n" +
+  "When writing .lm files, use Lamia syntax as much as possible - as few plain Python lines as possible.\n\n" +
   "Do NOT rewrite entire files when only a few lines need changing. " +
   "Do NOT add boilerplate, emojis, verbose commentary, or decorative formatting. " +
-  ".hu files are concise prompt templates — keep them short and readable. " +
+  ".hu files are concise prompt templates - keep them short and readable. " +
   "Do NOT add YAML front matter (---name/model/temperature---) unless the file already has it. " +
   "Read the file first, then change only what the user asked for. " +
-  "When asked to copy or move files/directories, ALWAYS use the appropriate file tools — never recreate files manually. " +
+  "When asked to copy or move files/directories, ALWAYS use the appropriate file tools - never recreate files manually. " +
   "Use your search and file-finding tools when exploring the codebase. " +
   "Use your browser tools for web testing and automation when the user asks to test, verify, or interact with web pages.";
 
@@ -124,6 +125,7 @@ type ToolCallRecord = {
   tool: string;
   label: string;
   args: Record<string, unknown>;
+  success?: boolean;
   ts: number;
 };
 
@@ -416,6 +418,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                 label: displayLabel,
               });
             },
+            onToolResult: (tool, success) => {
+              for (let i = completedTools.length - 1; i >= 0; i--) {
+                if (completedTools[i].tool === tool && completedTools[i].success === undefined) {
+                  completedTools[i].success = success;
+                  break;
+                }
+              }
+              this._post({ type: "toolResult", tool, success });
+            },
           });
 
           if (response.type === "response" && response.text) {
@@ -431,6 +442,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                   tool: t.tool,
                   label: t.label,
                   args: t.args,
+                  success: t.success,
                   ts: t.ts,
                 })),
                 responseTs,
@@ -467,7 +479,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           }
         } catch (err: any) {
           if (err.message === "Aborted") {
-            // User stopped generation — nothing to report
+            // User stopped generation - nothing to report
           } else if (err instanceof NoPythonError) {
             this._post({
               type: "error",
@@ -508,10 +520,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       }
 
       case "stop": {
-        if (this._generating && this._process) {
-          const lastUser = [...this._chat.messages].reverse().find(m => m.role === "user");
-          this._process.abort();
+        if (this._generating) {
+          this._generating = false;
+          this._post({ type: "thinking", active: false });
+          if (this._process) {
+            this._process.abort();
+          }
           this._post({ type: "stopped" });
+          const lastUser = [...this._chat.messages].reverse().find(m => m.role === "user");
           if (lastUser) {
             this._post({ type: "populateInput", text: lastUser.text });
           }
@@ -926,6 +942,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-charts-green, #4ec);
       opacity: 0.7;
     }
+    .tool-step .ts-fail {
+      flex-shrink: 0; font-size: 12px;
+      color: var(--vscode-charts-red, #e44);
+      opacity: 0.7;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── File changes ───────────────────────────────────────────────────── */
@@ -1234,7 +1255,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     let toolProgressEl = null;
 
     function escapeHtml(s) {
-      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      const text = String(s ?? "");
+      return text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
 
     function addToolProgress(label) {
@@ -1249,11 +1271,12 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         container.appendChild(toolProgressEl);
       }
 
+      // If a previous spinner is still active (tool_result not received), mark it done
       toolProgressEl.querySelectorAll(".ts-spinner").forEach(function(s) {
-        const check = document.createElement("span");
-        check.className = "ts-check";
-        check.textContent = "\\u2713";
-        s.replaceWith(check);
+        var icon = document.createElement("span");
+        icon.className = "ts-check";
+        icon.textContent = "\\u2713";
+        s.replaceWith(icon);
       });
 
       const step = document.createElement("div");
@@ -1263,13 +1286,24 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       container.scrollTop = container.scrollHeight;
     }
 
+    function markLastToolResult(success) {
+      if (!toolProgressEl) return;
+      var spinners = toolProgressEl.querySelectorAll(".ts-spinner");
+      if (spinners.length === 0) return;
+      var last = spinners[spinners.length - 1];
+      var icon = document.createElement("span");
+      icon.className = success ? "ts-check" : "ts-fail";
+      icon.textContent = success ? "\\u2713" : "\\u2717";
+      last.replaceWith(icon);
+    }
+
     function completeToolProgress() {
       if (!toolProgressEl) return;
       toolProgressEl.querySelectorAll(".ts-spinner").forEach(function(s) {
-        const check = document.createElement("span");
-        check.className = "ts-check";
-        check.textContent = "\\u2713";
-        s.replaceWith(check);
+        var icon = document.createElement("span");
+        icon.className = "ts-check";
+        icon.textContent = "\\u2713";
+        s.replaceWith(icon);
       });
       toolProgressEl = null;
     }
@@ -1282,7 +1316,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         const step = document.createElement("div");
         step.className = "tool-step";
         const label = t && t.label ? t.label : (t && t.tool ? "Using tool: " + t.tool : "Using tool");
-        step.innerHTML = '<span class="ts-check">\\u2713</span><span>' + escapeHtml(label) + '</span>';
+        var ok = t.success !== false;
+        var cls = ok ? "ts-check" : "ts-fail";
+        var sym = ok ? "\\u2713" : "\\u2717";
+        step.innerHTML = '<span class="' + cls + '">' + sym + '</span><span>' + escapeHtml(label) + '</span>';
         wrapper.appendChild(step);
       });
       container.appendChild(wrapper);
@@ -1565,6 +1602,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     document.getElementById("save-key-btn").addEventListener("click", saveApiKey);
     document.getElementById("send-btn").addEventListener("click", sendMessage);
     document.getElementById("stop-btn").addEventListener("click", function() {
+      // Emergency local unstick even if extension host is delayed.
+      completeToolProgress();
+      removeThinking();
+      setGenerating(false);
+      document.getElementById("send-btn").disabled = false;
       vscodeApi.postMessage({ type: "stop" });
     });
 
@@ -1685,8 +1727,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     // ── Message listener ───────────────────────────────────────────────────
 
     window.addEventListener("message", event => {
-      const msg = event.data;
-      switch (msg.type) {
+      try {
+        const msg = event.data;
+        switch (msg.type) {
         case "init":
           allModels = msg.models;
           configuredProviders = msg.configuredProviders;
@@ -1702,6 +1745,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "toolProgress":
           addToolProgress(msg.label);
+          break;
+        case "toolResult":
+          markLastToolResult(msg.success);
           break;
         case "fileChanges":
           renderFileChanges(msg.files);
@@ -1766,6 +1812,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         case "addFile":
           addFileChip(msg.file);
           break;
+        }
+      } catch (err) {
+        console.error("Lamia chat webview message handler failed:", err);
+        // Keep UI operable even if one message payload is malformed.
+        completeToolProgress();
+        removeThinking();
+        setGenerating(false);
+        document.getElementById("send-btn").disabled = false;
       }
     });
 

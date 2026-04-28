@@ -15,6 +15,7 @@ export interface ChatMessage {
       label?: string;
       args?: Record<string, unknown>;
       success?: boolean;
+      error?: string;
       ts?: number;
     }>;
     fileWrites?: Array<{

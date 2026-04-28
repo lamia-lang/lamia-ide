@@ -49,7 +49,7 @@ type HostMessage =
   | { type: "error"; text: string }
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
-  | { type: "toolResult"; tool: string; success: boolean }
+  | { type: "toolResult"; tool: string; success: boolean; error?: string }
   | { type: "fileChanges"; files: { path: string; action: string; original?: string }[] }
   | { type: "populateInput"; text: string }
   | { type: "stopped" }
@@ -126,6 +126,7 @@ type ToolCallRecord = {
   label: string;
   args: Record<string, unknown>;
   success?: boolean;
+  error?: string;
   ts: number;
 };
 
@@ -418,14 +419,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                 label: displayLabel,
               });
             },
-            onToolResult: (tool, success) => {
+            onToolResult: (tool, success, error) => {
               for (let i = completedTools.length - 1; i >= 0; i--) {
                 if (completedTools[i].tool === tool && completedTools[i].success === undefined) {
                   completedTools[i].success = success;
+                  if (error) completedTools[i].error = error;
                   break;
                 }
               }
-              this._post({ type: "toolResult", tool, success });
+              this._post({ type: "toolResult", tool, success, error });
             },
           });
 
@@ -443,6 +445,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                   label: t.label,
                   args: t.args,
                   success: t.success,
+                  error: t.error,
                   ts: t.ts,
                 })),
                 responseTs,
@@ -947,6 +950,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-charts-red, #e44);
       opacity: 0.7;
     }
+    .tool-step .ts-error-detail {
+      font-size: 11px; opacity: 0.6;
+      color: var(--vscode-charts-red, #e44);
+      margin-left: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 260px;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── File changes ───────────────────────────────────────────────────── */
@@ -1286,7 +1296,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       container.scrollTop = container.scrollHeight;
     }
 
-    function markLastToolResult(success) {
+    function markLastToolResult(success, error) {
       if (!toolProgressEl) return;
       var spinners = toolProgressEl.querySelectorAll(".ts-spinner");
       if (spinners.length === 0) return;
@@ -1295,6 +1305,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       icon.className = success ? "ts-check" : "ts-fail";
       icon.textContent = success ? "\\u2713" : "\\u2717";
       last.replaceWith(icon);
+      if (!success && error) {
+        var step = icon.closest(".tool-step");
+        if (step) {
+          var errEl = document.createElement("span");
+          errEl.className = "ts-error-detail";
+          errEl.textContent = error;
+          step.appendChild(errEl);
+        }
+      }
     }
 
     function completeToolProgress() {
@@ -1320,6 +1339,12 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         var cls = ok ? "ts-check" : "ts-fail";
         var sym = ok ? "\\u2713" : "\\u2717";
         step.innerHTML = '<span class="' + cls + '">' + sym + '</span><span>' + escapeHtml(label) + '</span>';
+        if (!ok && t.error) {
+          var errEl = document.createElement("span");
+          errEl.className = "ts-error-detail";
+          errEl.textContent = t.error;
+          step.appendChild(errEl);
+        }
         wrapper.appendChild(step);
       });
       container.appendChild(wrapper);
@@ -1747,7 +1772,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           addToolProgress(msg.label);
           break;
         case "toolResult":
-          markLastToolResult(msg.success);
+          markLastToolResult(msg.success, msg.error);
           break;
         case "fileChanges":
           renderFileChanges(msg.files);

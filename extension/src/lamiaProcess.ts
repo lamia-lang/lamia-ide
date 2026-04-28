@@ -26,7 +26,7 @@ type PendingRequest = {
   resolve: (value: LamiaResponse) => void;
   reject: (err: Error) => void;
   onToolUse?: (tool: string, args: Record<string, unknown>, label: string) => void;
-  onToolResult?: (tool: string, success: boolean) => void;
+  onToolResult?: (tool: string, success: boolean, error?: string) => void;
 };
 
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
@@ -133,7 +133,7 @@ export class LamiaProcess {
           const head = this._queue[0];
           if (head?.onToolResult) {
             const t = msg as any;
-            head.onToolResult(t.tool ?? "", t.success !== false);
+            head.onToolResult(t.tool ?? "", t.success !== false, t.error);
           }
         } catch { /* keep processing remaining lines */ }
         continue;
@@ -172,7 +172,7 @@ export class LamiaProcess {
       files?: string[];
       messages?: { role: string; text: string }[];
       onToolUse?: (tool: string, args: Record<string, unknown>, label: string) => void;
-      onToolResult?: (tool: string, success: boolean) => void;
+      onToolResult?: (tool: string, success: boolean, error?: string) => void;
     },
   ): Promise<LamiaResponse> {
     if (this._disposed) throw new Error("LamiaProcess is disposed");

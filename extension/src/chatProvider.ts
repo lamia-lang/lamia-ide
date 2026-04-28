@@ -73,50 +73,21 @@ type HostMessage =
 
 
 const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
-  "If the user asks for code changes, perform the changes using tools. Do not only propose code." +
-  "When the user asks you to modify or create files, ALWAYS use the write_file tool - never just show code in your response. " +
+  "If the user asks for code changes, perform the changes using tools. Do not only propose code. " +
+  "When modifying or creating files, ALWAYS use your file tools — never just show code in your response. " +
   "IMPORTANT: When editing existing files, make MINIMAL targeted changes. " +
-  "Prefer using .hu files for code changes when possible. Only complicated logic like orchestration changes will be in .lm files." +
+  "Prefer using .hu files for code changes when possible. Only complicated logic like orchestration changes will be in .lm files. " +
   "Use your tools to look up the relevant documentation before answering. " +
-  "Do not create new files if you can edit existing ones." +
-  "When writing .lm files, use Lamia syntax as much as possible - as few plain Python lines as possible.\n\n" +
+  "Do not create new files if you can edit existing ones. " +
+  "When writing .lm files, use Lamia syntax as much as possible — as few plain Python lines as possible.\n\n" +
   "Do NOT rewrite entire files when only a few lines need changing. " +
   "Do NOT add boilerplate, emojis, verbose commentary, or decorative formatting. " +
-  ".hu files are concise prompt templates - keep them short and readable. " +
+  ".hu files are concise prompt templates — keep them short and readable. " +
   "Do NOT add YAML front matter (---name/model/temperature---) unless the file already has it. " +
   "Read the file first, then change only what the user asked for. " +
-  "When asked to copy or move files/directories, ALWAYS use copy_file or move_file tools — never recreate files manually. " +
-  "Use grep to search for patterns in code and glob to find files by name. " +
-  "You have browser tools (browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_wait) " +
-  "for web testing and automation. Use them when the user asks to test, verify, or interact with web pages.";
-
-const TOOL_LABELS: Record<string, { verb: string; argKey?: string }> = {
-  get_docs:    { verb: "Reading docs",  argKey: "topic" },
-  read_file:   { verb: "Reading file",  argKey: "path" },
-  list_files:  { verb: "Listing files", argKey: "directory" },
-  write_file:  { verb: "Writing file",  argKey: "path" },
-  patch_file:  { verb: "Editing file",  argKey: "path" },
-  delete_file: { verb: "Deleting file", argKey: "path" },
-  copy_file:        { verb: "Copying",          argKey: "source" },
-  move_file:        { verb: "Moving",           argKey: "source" },
-  grep:             { verb: "Searching",        argKey: "pattern" },
-  glob:             { verb: "Finding files",    argKey: "pattern" },
-  find_definition:    { verb: "Finding definition",  argKey: "symbol" },
-  find_references:    { verb: "Finding references",  argKey: "symbol" },
-  browser_navigate:   { verb: "Navigating to",       argKey: "url" },
-  browser_click:      { verb: "Clicking",            argKey: "selector" },
-  browser_type:       { verb: "Typing into",         argKey: "selector" },
-  browser_get_text:   { verb: "Reading page text",   argKey: "selector" },
-  browser_screenshot: { verb: "Taking screenshot" },
-  browser_wait:       { verb: "Waiting for",         argKey: "selector" },
-};
-
-function toolProgressLabel(tool: string, args: Record<string, unknown>): string {
-  const def = TOOL_LABELS[tool];
-  if (!def) return `Using tool: ${tool}`;
-  const detail = def.argKey && args[def.argKey] ? String(args[def.argKey]) : "";
-  return detail ? `${def.verb}: ${detail}` : def.verb;
-}
+  "When asked to copy or move files/directories, ALWAYS use the appropriate file tools — never recreate files manually. " +
+  "Use your search and file-finding tools when exploring the codebase. " +
+  "Use your browser tools for web testing and automation when the user asks to test, verify, or interact with web pages.";
 
 function buildSnippetPrefix(snippets: CopiedSnippet[] | undefined): string {
   if (!snippets || snippets.length === 0) return "";
@@ -436,12 +407,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             system: SYSTEM_HINT,
             files,
             messages: history,
-            onToolUse: (tool, args) => {
-              completedTools.push({ tool, label: toolProgressLabel(tool, args), args, ts: Date.now() });
+            onToolUse: (tool, args, label) => {
+              const displayLabel = label || tool.replace(/_/g, " ");
+              completedTools.push({ tool, label: displayLabel, args, ts: Date.now() });
               this._post({
                 type: "toolProgress",
                 tool,
-                label: toolProgressLabel(tool, args),
+                label: displayLabel,
               });
             },
           });

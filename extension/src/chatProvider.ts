@@ -929,7 +929,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       padding: 4px 10px;
     }
     .tool-step {
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap;
       font-size: 12px; opacity: 0.7; line-height: 1.4;
     }
     .tool-step .ts-spinner {
@@ -951,11 +951,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       opacity: 0.7;
     }
     .tool-step .ts-error-detail {
-      font-size: 11px; opacity: 0.6;
+      display: block;
+      flex-basis: 100%;
+      margin-left: 18px;
+      font-size: 11px; opacity: 0.7;
       color: var(--vscode-charts-red, #e44);
-      margin-left: 2px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      max-width: 260px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: visible;
+      text-overflow: clip;
+      max-width: none;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 

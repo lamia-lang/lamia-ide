@@ -22,6 +22,15 @@ import { NoPythonError } from "./lamiaInstaller";
 import { getChatConfigPath, writeSelectedModel, readSelectedModel, ensureChatConfig } from "./chatConfig";
 import { filterFiles } from "./fileContext";
 import { getLastCopied, clearLastCopied, CopiedSnippet } from "./clipboardStore";
+import {
+  reviewCompletion,
+  buildJudgePrompt,
+  buildEscalatingFeedback,
+  MAX_REVIEW_ROUNDS,
+  ReviewFlag,
+  ToolCallInfo,
+  ReviewResult,
+} from "./completionReviewer";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +79,8 @@ type HostMessage =
       type: "chatList";
       chats: { id: string; title: string; updated: number }[];
       currentId: string;
-    };
+    }
+;
 
 
 const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
@@ -141,6 +151,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   private _historySummary: string | null = null;
   private _summarizedCount = 0;
   private _compressing = false;
+  private _reviewRound = 0;
 
   constructor(private readonly _context: vscode.ExtensionContext) {
     this._chat = loadLatestChat() || newChat();
@@ -214,6 +225,88 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     const contextJson = JSON.stringify(message.turnContext, null, 2);
     return `${message.text}\n\n<turn_context_json>\n${contextJson}\n</turn_context_json>`;
+  }
+
+  // ── Completion reviewer ──────────────────────────────────────────────────
+
+  private _toToolCallInfos(records: ToolCallRecord[]): ToolCallInfo[] {
+    return records.map(r => ({
+      tool: r.tool,
+      args: r.args,
+      success: r.success,
+      error: r.error,
+    }));
+  }
+
+  private async _runLLMJudge(
+    userMessage: string,
+    responseText: string,
+    toolCalls: ToolCallInfo[],
+    fileWrites: FileWrite[],
+    flags: ReviewFlag[]
+  ): Promise<{ verdict: string; reason: string; feedback: string }> {
+    const prompt = buildJudgePrompt(userMessage, responseText, toolCalls, fileWrites, flags);
+    const proc = await this._ensureProcess();
+    const result = await proc.send(prompt, {
+      system: "You are a strict code review judge. Return ONLY valid JSON, nothing else.",
+    });
+    try {
+      const text = (result.text || "").trim();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch {
+      // fall through
+    }
+    return { verdict: "PASS", reason: "Judge parse error — defaulting to pass", feedback: "" };
+  }
+
+  private async _reviewAndMaybeRetry(
+    userMessage: string,
+    responseText: string,
+    completedTools: ToolCallRecord[],
+    fileWrites: FileWrite[]
+  ): Promise<void> {
+    const toolInfos = this._toToolCallInfos(completedTools);
+    const review: ReviewResult = reviewCompletion({
+      userMessage,
+      responseText,
+      toolCalls: toolInfos,
+      fileWrites,
+    });
+
+    if (review.verdict === "pass") {
+      this._reviewRound = 0;
+      return;
+    }
+
+    const judgeResult = await this._runLLMJudge(
+      userMessage, responseText, toolInfos, fileWrites, review.flags
+    );
+
+    if (judgeResult.verdict === "PASS") {
+      this._reviewRound = 0;
+      return;
+    }
+
+    this._reviewRound++;
+    if (this._reviewRound >= MAX_REVIEW_ROUNDS) {
+      this._reviewRound = 0;
+      return;
+    }
+
+    const feedback = buildEscalatingFeedback(
+      this._reviewRound,
+      review.flags,
+      judgeResult.feedback
+    );
+
+    this._handleMessage({
+      type: "send",
+      message: feedback,
+      model: "",
+    });
   }
 
   private _savePartialProgress(tools: ToolCallRecord[], errorText: string): void {
@@ -477,6 +570,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
               });
               this._lastFileWrites = deduped;
             }
+
+            await this._reviewAndMaybeRetry(
+              message.message,
+              response.text,
+              completedTools,
+              response.files || []
+            );
           } else if (response.type === "error") {
             this._savePartialProgress(completedTools, response.message || "Unknown error");
             this._post({ type: "error", text: response.message || "Unknown error" });

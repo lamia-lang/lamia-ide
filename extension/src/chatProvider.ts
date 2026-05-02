@@ -466,15 +466,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             this._maybeCompressInBackground();
 
             if (response.files && response.files.length > 0) {
+              const deduped = this._deduplicateFileWrites(response.files);
               this._post({
                 type: "fileChanges",
-                files: response.files.map(f => ({
+                files: deduped.map(f => ({
                   path: f.path,
                   action: f.action,
                   original: f.original,
                 })),
               });
-              this._lastFileWrites = response.files;
+              this._lastFileWrites = deduped;
             }
           } else if (response.type === "error") {
             this._savePartialProgress(completedTools, response.message || "Unknown error");
@@ -659,6 +660,27 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
   private _post(msg: HostMessage): void {
     this._view?.webview.postMessage(msg);
+  }
+
+  /**
+   * Deduplicate file writes by path: when write_file + patch_file hit the
+   * same file (e.g. lint-fix loop), keep the first entry's original and the
+   * last entry's content/action so the diff shows the full before-after.
+   */
+  private _deduplicateFileWrites(files: FileWrite[]): FileWrite[] {
+    const seen = new Map<string, FileWrite>();
+    const order: string[] = [];
+    for (const f of files) {
+      if (seen.has(f.path)) {
+        const prev = seen.get(f.path)!;
+        prev.content = f.content;
+        prev.action = f.action;
+      } else {
+        seen.set(f.path, { ...f });
+        order.push(f.path);
+      }
+    }
+    return order.map(p => seen.get(p)!);
   }
 
   // ── Webview HTML ───────────────────────────────────────────────────────────
@@ -1778,6 +1800,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           break;
         case "toolResult":
           markLastToolResult(msg.success, msg.error);
+          if (isGenerating) showThinking();
           break;
         case "fileChanges":
           renderFileChanges(msg.files);

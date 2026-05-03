@@ -222,9 +222,38 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     if (!hasToolCalls && !hasFileWrites) {
       return message.text;
     }
+    const tools = (message.turnContext.toolCalls || [])
+      .map(t => t.tool)
+      .filter(Boolean);
+    const uniqueTools = [...new Set(tools)];
+    const files = (message.turnContext.fileWrites || [])
+      .map(f => `${f.action}:${f.path}`)
+      .slice(0, 10);
+    const parts: string[] = [];
+    if (uniqueTools.length > 0) {
+      parts.push(`tools_used: ${uniqueTools.join(", ")}`);
+    }
+    if (files.length > 0) {
+      parts.push(`files_changed: ${files.join(" | ")}`);
+    }
+    if (parts.length === 0) {
+      return message.text;
+    }
+    return `${message.text}\n\n[execution_summary]\n${parts.join("\n")}\n[/execution_summary]`;
+  }
 
-    const contextJson = JSON.stringify(message.turnContext, null, 2);
-    return `${message.text}\n\n<turn_context_json>\n${contextJson}\n</turn_context_json>`;
+  private _sanitizeAssistantResponse(text: string): string {
+    let safe = text.replace(/<turn_context_json>[\s\S]*?<\/turn_context_json>/gi, "").trim();
+
+    const cutMarkers = ["\"toolCalls\"", "\"fileWrites\"", "\"responseTs\"", "<turn_context_json>"];
+    for (const marker of cutMarkers) {
+      const idx = safe.indexOf(marker);
+      if (idx >= 0) {
+        safe = safe.slice(0, idx).trim();
+      }
+    }
+
+    return safe;
   }
 
   // ── Completion reviewer ──────────────────────────────────────────────────
@@ -528,9 +557,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             const responseTs = Date.now();
             const fileWriteTs = responseTs + 1;
             const dedupedFiles = response.files ? this._deduplicateFileWrites(response.files) : undefined;
+            const safeResponseText = this._sanitizeAssistantResponse(response.text);
             const assistantMsg: ChatMessage = {
               role: "assistant",
-              text: response.text,
+              text: safeResponseText,
               model: response.model,
               tokens: response.tokens,
               turnContext: {
@@ -555,7 +585,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             };
             this._chat.messages.push(assistantMsg);
             saveChat(this._chat);
-            this._post({ type: "response", text: response.text, model: response.model, tokens: response.tokens });
+            this._post({ type: "response", text: safeResponseText, model: response.model, tokens: response.tokens });
 
             this._maybeCompressInBackground();
 
@@ -745,7 +775,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       models,
       configuredProviders,
       selectedModel,
-      messages: this._chat.messages,
+      messages: this._chat.messages.map(m => (
+        m.role === "assistant" ? { ...m, text: this._sanitizeAssistantResponse(m.text) } : m
+      )),
       chatTitle: this._chat.title,
     });
   }
@@ -1358,7 +1390,19 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         }
         items.push({ kind: "response", data: msg, ts: tc.responseTs || msg.ts || 0 });
         if (Array.isArray(tc.fileWrites)) {
+          var seenPaths = {};
+          var dedupedWrites = [];
           tc.fileWrites.forEach(function(f) {
+            if (seenPaths[f.path] !== undefined) {
+              var prev = dedupedWrites[seenPaths[f.path]];
+              prev.content = f.content;
+              prev.action = f.action;
+            } else {
+              seenPaths[f.path] = dedupedWrites.length;
+              dedupedWrites.push({ path: f.path, action: f.action, content: f.content, original: f.original, ts: f.ts });
+            }
+          });
+          dedupedWrites.forEach(function(f) {
             items.push({ kind: "file", data: f, ts: f.ts || 0 });
           });
         }

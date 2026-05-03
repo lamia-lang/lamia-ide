@@ -29,7 +29,8 @@ export type FlagType =
   | "lint_unresolved"
   | "write_failed"
   | "empty_response"
-  | "no_op_turn";
+  | "no_op_turn"
+  | "internal_context_leak";
 
 export interface ReviewFlag {
   type: FlagType;
@@ -160,6 +161,24 @@ function checkNoOpTurn(
   return null;
 }
 
+function checkInternalContextLeak(responseText: string): ReviewFlag | null {
+  const markers = [
+    "<turn_context_json>",
+    "</turn_context_json>",
+    "\"toolCalls\"",
+    "\"fileWrites\"",
+    "\"responseTs\"",
+  ];
+  const lower = responseText.toLowerCase();
+  const hit = markers.find(m => lower.includes(m.toLowerCase()));
+  if (!hit) return null;
+  return {
+    type: "internal_context_leak",
+    detail: `Response leaked internal execution context (${hit})`,
+    evidence: { marker: hit },
+  };
+}
+
 // ── Main review function ─────────────────────────────────────────────────────
 
 export function reviewCompletion(input: ReviewInput): ReviewResult {
@@ -178,6 +197,9 @@ export function reviewCompletion(input: ReviewInput): ReviewResult {
     input.userMessage, input.responseText, input.toolCalls, input.fileWrites
   );
   if (noOp) flags.push(noOp);
+
+  const contextLeak = checkInternalContextLeak(input.responseText);
+  if (contextLeak) flags.push(contextLeak);
 
   return {
     verdict: flags.length > 0 ? "flag" : "pass",

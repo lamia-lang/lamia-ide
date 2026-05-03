@@ -296,7 +296,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     responseText: string,
     completedTools: ToolCallRecord[],
     fileWrites: FileWrite[]
-  ): Promise<void> {
+  ): Promise<boolean> {
     const toolInfos = this._toToolCallInfos(completedTools);
     const review: ReviewResult = reviewCompletion({
       userMessage,
@@ -307,7 +307,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     if (review.verdict === "pass") {
       this._reviewRound = 0;
-      return;
+      return true;
     }
 
     const judgeResult = await this._runLLMJudge(
@@ -316,13 +316,17 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     if (judgeResult.verdict === "PASS") {
       this._reviewRound = 0;
-      return;
+      return true;
     }
 
     this._reviewRound++;
     if (this._reviewRound >= MAX_REVIEW_ROUNDS) {
       this._reviewRound = 0;
-      return;
+      this._post({
+        type: "error",
+        text: "The response was blocked by safety review because it did not match executed evidence.",
+      });
+      return false;
     }
 
     const feedback = buildEscalatingFeedback(
@@ -336,6 +340,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       message: feedback,
       model: "",
     });
+    return false;
   }
 
   private _savePartialProgress(tools: ToolCallRecord[], errorText: string): void {
@@ -554,59 +559,60 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           });
 
           if (response.type === "response" && response.text) {
-            const responseTs = Date.now();
-            const fileWriteTs = responseTs + 1;
             const dedupedFiles = response.files ? this._deduplicateFileWrites(response.files) : undefined;
-            const safeResponseText = this._sanitizeAssistantResponse(response.text);
-            const assistantMsg: ChatMessage = {
-              role: "assistant",
-              text: safeResponseText,
-              model: response.model,
-              tokens: response.tokens,
-              turnContext: {
-                toolCalls: completedTools.map(t => ({
-                  tool: t.tool,
-                  label: t.label,
-                  args: t.args,
-                  success: t.success,
-                  error: t.error,
-                  ts: t.ts,
-                })),
-                responseTs,
-                fileWrites: dedupedFiles?.map((f, i) => ({
-                  path: f.path,
-                  action: f.action,
-                  content: f.content,
-                  original: f.original,
-                  ts: fileWriteTs + i,
-                })),
-              },
-              ts: responseTs,
-            };
-            this._chat.messages.push(assistantMsg);
-            saveChat(this._chat);
-            this._post({ type: "response", text: safeResponseText, model: response.model, tokens: response.tokens });
-
-            this._maybeCompressInBackground();
-
-            if (dedupedFiles && dedupedFiles.length > 0) {
-              this._post({
-                type: "fileChanges",
-                files: dedupedFiles.map(f => ({
-                  path: f.path,
-                  action: f.action,
-                  original: f.original,
-                })),
-              });
-              this._lastFileWrites = dedupedFiles;
-            }
-
-            await this._reviewAndMaybeRetry(
+            const accepted = await this._reviewAndMaybeRetry(
               message.message,
               response.text,
               completedTools,
-              response.files || []
+              dedupedFiles || []
             );
+            if (accepted) {
+              const responseTs = Date.now();
+              const fileWriteTs = responseTs + 1;
+              const safeResponseText = this._sanitizeAssistantResponse(response.text);
+              const assistantMsg: ChatMessage = {
+                role: "assistant",
+                text: safeResponseText,
+                model: response.model,
+                tokens: response.tokens,
+                turnContext: {
+                  toolCalls: completedTools.map(t => ({
+                    tool: t.tool,
+                    label: t.label,
+                    args: t.args,
+                    success: t.success,
+                    error: t.error,
+                    ts: t.ts,
+                  })),
+                  responseTs,
+                  fileWrites: dedupedFiles?.map((f, i) => ({
+                    path: f.path,
+                    action: f.action,
+                    content: f.content,
+                    original: f.original,
+                    ts: fileWriteTs + i,
+                  })),
+                },
+                ts: responseTs,
+              };
+              this._chat.messages.push(assistantMsg);
+              saveChat(this._chat);
+              this._post({ type: "response", text: safeResponseText, model: response.model, tokens: response.tokens });
+
+              this._maybeCompressInBackground();
+
+              if (dedupedFiles && dedupedFiles.length > 0) {
+                this._post({
+                  type: "fileChanges",
+                  files: dedupedFiles.map(f => ({
+                    path: f.path,
+                    action: f.action,
+                    original: f.original,
+                  })),
+                });
+                this._lastFileWrites = dedupedFiles;
+              }
+            }
           } else if (response.type === "error") {
             this._savePartialProgress(completedTools, response.message || "Unknown error");
             this._post({ type: "error", text: response.message || "Unknown error" });

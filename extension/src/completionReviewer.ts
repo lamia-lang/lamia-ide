@@ -30,7 +30,8 @@ export type FlagType =
   | "write_failed"
   | "empty_response"
   | "no_op_turn"
-  | "internal_context_leak";
+  | "internal_context_leak"
+  | "claim_without_evidence";
 
 export interface ReviewFlag {
   type: FlagType;
@@ -179,6 +180,29 @@ function checkInternalContextLeak(responseText: string): ReviewFlag | null {
   };
 }
 
+function checkClaimWithoutEvidence(
+  responseText: string,
+  toolCalls: ToolCallInfo[],
+  fileWrites: FileWrite[]
+): ReviewFlag | null {
+  const hasWriteEvidence =
+    fileWrites.length > 0 || toolCalls.some(t => WRITE_TOOLS.has(t.tool));
+  if (hasWriteEvidence) return null;
+
+  const claimPattern = /\b(fixed|updated|implemented|changed)\b/i;
+  if (!claimPattern.test(responseText)) return null;
+
+  return {
+    type: "claim_without_evidence",
+    detail: "Response claims changes were made, but no write evidence exists",
+    evidence: {
+      matched: responseText.match(claimPattern)?.[0] || "",
+      toolCount: toolCalls.length,
+      fileWriteCount: fileWrites.length,
+    },
+  };
+}
+
 // ── Main review function ─────────────────────────────────────────────────────
 
 export function reviewCompletion(input: ReviewInput): ReviewResult {
@@ -200,6 +224,13 @@ export function reviewCompletion(input: ReviewInput): ReviewResult {
 
   const contextLeak = checkInternalContextLeak(input.responseText);
   if (contextLeak) flags.push(contextLeak);
+
+  const claimNoEvidence = checkClaimWithoutEvidence(
+    input.responseText,
+    input.toolCalls,
+    input.fileWrites
+  );
+  if (claimNoEvidence) flags.push(claimNoEvidence);
 
   return {
     verdict: flags.length > 0 ? "flag" : "pass",

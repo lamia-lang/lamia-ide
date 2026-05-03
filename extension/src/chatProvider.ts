@@ -527,6 +527,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           if (response.type === "response" && response.text) {
             const responseTs = Date.now();
             const fileWriteTs = responseTs + 1;
+            const dedupedFiles = response.files ? this._deduplicateFileWrites(response.files) : undefined;
             const assistantMsg: ChatMessage = {
               role: "assistant",
               text: response.text,
@@ -542,7 +543,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
                   ts: t.ts,
                 })),
                 responseTs,
-                fileWrites: response.files?.map((f, i) => ({
+                fileWrites: dedupedFiles?.map((f, i) => ({
                   path: f.path,
                   action: f.action,
                   content: f.content,
@@ -558,17 +559,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
             this._maybeCompressInBackground();
 
-            if (response.files && response.files.length > 0) {
-              const deduped = this._deduplicateFileWrites(response.files);
+            if (dedupedFiles && dedupedFiles.length > 0) {
               this._post({
                 type: "fileChanges",
-                files: deduped.map(f => ({
+                files: dedupedFiles.map(f => ({
                   path: f.path,
                   action: f.action,
                   original: f.original,
                 })),
               });
-              this._lastFileWrites = deduped;
+              this._lastFileWrites = dedupedFiles;
             }
 
             await this._reviewAndMaybeRetry(

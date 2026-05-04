@@ -98,7 +98,9 @@ const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia 
   "Read the file first, then change only what the user asked for. " +
   "When asked to copy or move files/directories, ALWAYS use the appropriate file tools - never recreate files manually. " +
   "Use your search and file-finding tools when exploring the codebase. " +
-  "Use your browser tools for web testing and automation when the user asks to test, verify, or interact with web pages.";
+  "Use your browser tools for web testing and automation when the user asks to test, verify, or interact with web pages.\n\n" +
+  "Before showing Lamia code (.lm or .hu) in chat, run lint_code and fix any errors. " +
+  "If the user asks to present or show code, return it in chat and do not write files unless they explicitly ask for file changes.";
 
 function buildSnippetPrefix(snippets: CopiedSnippet[] | undefined): string {
   if (!snippets || snippets.length === 0) return "";
@@ -1082,6 +1084,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       font-size: 10px; cursor: pointer; opacity: 0.7;
     }
     .code-actions button:hover { opacity: 1; }
+    .code-lang-badge {
+      position: absolute; top: 4px; left: 8px;
+      font-size: 9px; opacity: 0.5; text-transform: uppercase;
+      font-family: var(--vscode-editor-font-family);
+    }
 
     /* ── Tool progress ──────────────────────────────────────────────────── */
     .tool-progress {
@@ -1384,7 +1391,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       for (const msg of messages) {
         if (msg.role !== "assistant" || !msg.turnContext) {
           const meta = formatMeta(msg.model, msg.tokens);
-          appendMessage(msg.role, msg.text, meta || undefined);
+          const el = appendMessage(msg.role, msg.text, meta || undefined);
+          if (msg.role === "assistant" && el) renderCodeBlocks(el.querySelector(".message-bubble"));
           continue;
         }
         var tc = msg.turnContext;
@@ -1425,7 +1433,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             }
             if (it.kind === "response") {
               var meta = formatMeta(msg.model, msg.tokens);
-              appendMessage(msg.role, msg.text, meta || undefined);
+              var el = appendMessage(msg.role, msg.text, meta || undefined);
+              if (el) renderCodeBlocks(el.querySelector(".message-bubble"));
             } else if (it.kind === "file") {
               renderFileChanges([it.data]);
             }
@@ -1716,7 +1725,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       const codeBlockRegex = /\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g;
       const html = el.innerHTML;
       el.innerHTML = html.replace(codeBlockRegex, function(match, lang, code) {
+        var badgeHtml = '';
+        if (lang) {
+          var label = lang === 'lamia' ? 'lamia (.lm)' : lang === 'hu' ? 'lamia (.hu)' : lang;
+          badgeHtml = '<span class="code-lang-badge">' + label + '</span>';
+        }
         return '<div class="code-block-wrapper">' +
+          badgeHtml +
           '<div class="code-actions">' +
           '<button class="copy-btn" data-code="' + code.replace(/"/g, '&quot;') + '">Copy</button>' +
           '<button class="insert-btn" data-code="' + code.replace(/"/g, '&quot;') + '">Insert</button>' +

@@ -15,6 +15,7 @@ import { setLastCopied } from "./clipboardStore";
 import { LamiaDebugConfigProvider } from "./lamiaDebugConfigProvider";
 import { LamiaDebugSession } from "./lamiaDebugSession";
 import { resolveLamiaCli } from "./lamiaDebugRuntime";
+import { collectSystemInfo } from "./systemInfo";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -171,6 +172,16 @@ export function activate(context: vscode.ExtensionContext) {
       if (editor && chatProvider) {
         chatProvider.switchProjectIfNeeded(editor.document.uri.fsPath);
       }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.copySystemInfo", async () => {
+      const info = await collectSystemInfo();
+      await vscode.env.clipboard.writeText(info);
+      vscode.window.showInformationMessage(
+        "System info copied to clipboard. Paste it into your issue report."
+      );
     })
   );
 

@@ -1,0 +1,62 @@
+site_name: Lamia Studio Documentation
+site_url: https://lamia-lang.github.io/lamia-ide
+repo_url: https://github.com/lamia-lang/lamia-ide
+repo_name: lamia-lang/lamia-ide
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/favicon.png
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - First Steps: getting-started/first-steps.md
+  - Chat:
+      - Using Lamia Chat: chat/using-chat.md
+      - API Keys & Models: chat/api-keys-and-models.md
+      - Custom Models: chat/custom-models.md
+  - Code:
+      - Writing .lm Files: code/lm-files.md
+      - Writing .hu Files: code/hu-files.md
+      - Running Code: code/running.md
+      - Debugging: code/debugging.md
+  - Configuration:
+      - Project config.yaml: configuration/project-config.md
+      - Global Settings: configuration/global-settings.md
+  - Troubleshooting:
+      - Reporting Issues: troubleshooting/reporting-issues.md
+      - FAQ: troubleshooting/faq.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - attr_list
+  - toc:
+      permalink: true

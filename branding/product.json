@@ -1,6 +1,6 @@
 {
-  "reportIssueUrl": "https://github.com/user/lamia-ide/issues",
-  "documentationUrl": "https://github.com/user/lamia/blob/main/README.md",
+  "reportIssueUrl": "https://github.com/lamia-lang/lamia-ide/issues",
+  "documentationUrl": "https://lamia-lang.github.io/lamia-ide",
   "enableTelemetry": false,
   "updateUrl": "",
   "updateMode": "none",

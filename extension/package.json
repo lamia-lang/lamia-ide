@@ -89,6 +89,10 @@
       {
         "command": "lamia.trackCopy",
         "title": "Lamia: Track Copied Snippet"
+      },
+      {
+        "command": "lamia.copySystemInfo",
+        "title": "Lamia: Copy System Info for Bug Report"
       }
     ],
     "menus": {

@@ -162,15 +162,18 @@ function showPathHint(): void {
 
 export function writeIdePath(): void {
   const appPath = process.execPath;
-  let idePath: string;
-
-  if (process.platform === "darwin") {
-    const appMatch = appPath.match(/^(.+\.app)\//);
-    idePath = appMatch ? appMatch[1] : appPath;
-  } else {
-    idePath = appPath;
-  }
+  const idePath = resolveIdePath(appPath, process.platform);
 
   fs.mkdirSync(LAMIA_HOME, { recursive: true });
   fs.writeFileSync(path.join(LAMIA_HOME, "ide-path.txt"), idePath, "utf8");
+}
+
+export function resolveIdePath(appPath: string, platform: NodeJS.Platform): string {
+  if (platform !== "darwin") {
+    return appPath;
+  }
+
+  // process.execPath can point into nested helper bundles; keep the outer app bundle.
+  const appMatch = appPath.match(/^(.+?\.app)(?:\/|$)/);
+  return appMatch ? appMatch[1] : appPath;
 }

@@ -410,10 +410,20 @@ if [ "${OS}" = "Darwin" ]; then
     cp -R "${FINAL_BUNDLE}" "${DMG_STAGING}/"
     ln -s /Applications "${DMG_STAGING}/Applications"
 
-    hdiutil create -volname "${APP_NAME}" \
-        -srcfolder "${DMG_STAGING}" \
-        -ov -format UDZO \
-        "${DMG_PATH}"
+    for attempt in 1 2 3; do
+        if hdiutil create -volname "${APP_NAME}" \
+            -srcfolder "${DMG_STAGING}" \
+            -ov -format UDZO \
+            "${DMG_PATH}"; then
+            break
+        fi
+        if [[ $attempt -eq 3 ]]; then
+            echo "hdiutil failed after 3 attempts" >&2
+            exit 1
+        fi
+        echo "  hdiutil attempt $attempt failed, retrying in 5s..."
+        sleep 5
+    done
     rm -rf "${DMG_STAGING}"
 
     echo "  -> ${DMG_PATH}"

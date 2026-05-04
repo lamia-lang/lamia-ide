@@ -4,6 +4,8 @@ A lightweight IDE for the [Lamia](https://github.com/lamia-lang/lamia) programmi
 
 [![Release](https://img.shields.io/github/v/release/lamia-lang/lamia-ide?label=Download&style=for-the-badge)](https://github.com/lamia-lang/lamia-ide/releases/latest)
 
+📚 **Documentation:** https://lamia-lang.github.io/lamia-ide
+
 ## Building from Source (Recommended for macOS & Windows)
 
 Building locally is the easiest way to get started on **macOS** and **Windows** — it avoids Gatekeeper / SmartScreen warnings entirely since the app is built on your machine.

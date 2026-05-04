@@ -20,7 +20,6 @@ Lamia Studio is a dedicated IDE for the [Lamia programming language](https://lam
 
 ## Navigation
 
-- **[Installation](getting-started/installation.md)** — system requirements and setup
 - **[Using Lamia Chat](chat/using-chat.md)** — the AI assistant built into the IDE
 - **[API Keys & Models](chat/api-keys-and-models.md)** — configure providers and select models
 - **[Writing .lm Files](code/lm-files.md)** — hybrid Python-Lamia scripts

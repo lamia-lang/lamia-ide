@@ -281,6 +281,7 @@ cp    extension/package.json           "${LAMIA_EXT_DIR}/package.json"
 cp    extension/package-lock.json      "${LAMIA_EXT_DIR}/package-lock.json" 2>/dev/null || true
 cp -R extension/syntaxes               "${LAMIA_EXT_DIR}/syntaxes"
 cp -R extension/icons                  "${LAMIA_EXT_DIR}/icons"
+cp    extension/lamia-icon-theme.json  "${LAMIA_EXT_DIR}/lamia-icon-theme.json"
 cp    extension/lamia.code-snippets    "${LAMIA_EXT_DIR}/lamia.code-snippets"
 cp    extension/language-configuration-lm.json  "${LAMIA_EXT_DIR}/language-configuration-lm.json"
 cp    extension/language-configuration-hu.json  "${LAMIA_EXT_DIR}/language-configuration-hu.json"

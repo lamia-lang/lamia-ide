@@ -15,6 +15,13 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "iconThemes": [
+      {
+        "id": "lamia-icons",
+        "label": "Lamia File Icons",
+        "path": "./lamia-icon-theme.json"
+      }
+    ],
     "languages": [
       {
         "id": "lamia",
@@ -159,6 +166,7 @@
       ]
     },
     "configurationDefaults": {
+      "workbench.iconTheme": "lamia-icons",
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {

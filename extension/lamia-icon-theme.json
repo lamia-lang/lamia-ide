@@ -1,0 +1,14 @@
+{
+  "iconDefinitions": {
+    "_file_lm": {
+      "iconPath": "./icons/lm.svg"
+    },
+    "_file_hu": {
+      "iconPath": "./icons/hu.svg"
+    }
+  },
+  "fileExtensions": {
+    "lm": "_file_lm",
+    "hu": "_file_hu"
+  }
+}

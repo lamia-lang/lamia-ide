@@ -5,7 +5,7 @@ repo_name: lamia-lang/lamia-ide
 
 theme:
   name: material
-  logo: assets/logo.png
+  logo: https://raw.githubusercontent.com/lamia-lang/lamia/main/docs/assets/lamia_logo.png
   favicon: assets/favicon.png
   palette:
     - scheme: slate
@@ -46,6 +46,16 @@ nav:
   - Troubleshooting:
       - Reporting Issues: troubleshooting/reporting-issues.md
       - FAQ: troubleshooting/faq.md
+  - "Lamia Language Docs \u2197": https://lamia-lang.github.io/lamia
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/lamia-lang/lamia-ide
+    - icon: material/book-open-variant
+      link: https://lamia-lang.github.io/lamia
+      name: Lamia Language Documentation
+  generator: false
 
 markdown_extensions:
   - admonition

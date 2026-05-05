@@ -15,13 +15,6 @@
     "onStartupFinished"
   ],
   "contributes": {
-    "iconThemes": [
-      {
-        "id": "lamia-icons",
-        "label": "Lamia File Icons",
-        "path": "./lamia-icon-theme.json"
-      }
-    ],
     "languages": [
       {
         "id": "lamia",
@@ -32,7 +25,11 @@
         "extensions": [
           ".lm"
         ],
-        "configuration": "./language-configuration-lm.json"
+        "configuration": "./language-configuration-lm.json",
+        "icon": {
+          "light": "./icons/lm.svg",
+          "dark": "./icons/lm.svg"
+        }
       },
       {
         "id": "lamia-prompt",
@@ -166,7 +163,6 @@
       ]
     },
     "configurationDefaults": {
-      "workbench.iconTheme": "lamia-icons",
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {

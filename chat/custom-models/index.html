@@ -567,10 +567,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#creating-an-adapter-and-registering" class="md-nav__link">
+  <a href="#creating-an-adapter" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Creating an Adapter and registering
+        Creating an Adapter
       
     </span>
   </a>
@@ -582,6 +582,17 @@
     <span class="md-ellipsis">
       
         API Keys for Custom Adapters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#listing-available-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Listing Available Models
       
     </span>
   </a>
@@ -1093,10 +1104,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#creating-an-adapter-and-registering" class="md-nav__link">
+  <a href="#creating-an-adapter" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Creating an Adapter and registering
+        Creating an Adapter
       
     </span>
   </a>
@@ -1108,6 +1119,17 @@
     <span class="md-ellipsis">
       
         API Keys for Custom Adapters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#listing-available-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Listing Available Models
       
     </span>
   </a>
@@ -1156,19 +1178,36 @@
 </ol>
 <p>No API key is needed for Ollama — it runs locally.</p>
 <h2 id="custom-llm-adapters">Custom LLM Adapters<a class="headerlink" href="#custom-llm-adapters" title="Permanent link">&para;</a></h2>
-<p>Lamia supports custom LLM adapters for providers not built into the system. These are Python files placed in the <code>extension/adapters/</code> folder of your Lamia installation or in your project. See <a href="https://lamia-lang.github.io/lamia/user-guide/custom-llm-adapters/">Lamia Docs — Custom LLM Adapters</a> for the adapter API and implementation guide.</p>
-<h3 id="creating-an-adapter-and-registering">Creating an Adapter and registering<a class="headerlink" href="#creating-an-adapter-and-registering" title="Permanent link">&para;</a></h3>
-<p>An adapter is a Python file that implements the Lamia LLM adapter interface. Place it in your project directory or the global adapters folder.</p>
+<p>Lamia supports custom LLM adapters for providers not built into the system. These are Python files placed in the <code>extensions/adapters/</code> folder of your project. See <a href="https://lamia-lang.github.io/lamia/user-guide/custom-llm-adapters/">Lamia Docs — Custom LLM Adapters</a> for the adapter API and implementation guide.</p>
+<h3 id="creating-an-adapter">Creating an Adapter<a class="headerlink" href="#creating-an-adapter" title="Permanent link">&para;</a></h3>
+<p>An adapter is a Python file that implements the Lamia LLM adapter interface. The file name should match the provider name returned by the adapter's <code>name()</code> method — for example, a provider named <code>"my_provider"</code> should live in <code>my_provider.py</code>.</p>
+<p>Place it in your project's <code>extensions/adapters/</code> folder:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>your-project/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── extensions/
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>│   └── adapters/
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>│       └── my_provider.py
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>└── config.yaml
+</code></pre></div>
+<p>Lamia Studio automatically copies custom adapters from your workspace into the IDE's internal folder (<code>~/.lamia/ide/extensions/adapters/</code>). The copied file is named after the provider name from the adapter's <code>name()</code> classmethod, ensuring unique identification.</p>
 <p>Add the adapter's provider to your <code>config.yaml</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">model_chain</span><span class="p">:</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;my_custom_provider:my-model-v1&quot;</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">max_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">model_chain</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;my_provider:my-model-v1&quot;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">max_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
 </code></pre></div>
 <h3 id="api-keys-for-custom-adapters">API Keys for Custom Adapters<a class="headerlink" href="#api-keys-for-custom-adapters" title="Permanent link">&para;</a></h3>
 <p>For custom providers that require API keys, add the key to <code>~/.lamia/.env</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a># The LLM adapter implementation requires specifying the name of the API key name in the python file
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>MY_PROVIDER_API_KEY=your-key-here
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a># The env var name is defined by the adapter&#39;s env_var_names() method
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>MY_PROVIDER_API_KEY=your-key-here
 </code></pre></div>
+<h3 id="listing-available-models">Listing Available Models<a class="headerlink" href="#listing-available-models" title="Permanent link">&para;</a></h3>
+<p>Use the CLI to discover models from any provider:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># List models from all configured providers</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>lamia<span class="w"> </span>models
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># List models from a specific provider</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>lamia<span class="w"> </span>models<span class="w"> </span>--provider<span class="w"> </span>anthropic
+</code></pre></div>
+<p>Custom adapters can support this by implementing the <code>models()</code> classmethod.</p>
 
 
 

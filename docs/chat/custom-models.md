@@ -21,18 +21,29 @@ No API key is needed for Ollama — it runs locally.
 
 ## Custom LLM Adapters
 
-Lamia supports custom LLM adapters for providers not built into the system. These are Python files placed in the `extension/adapters/` folder of your Lamia installation or in your project. See [Lamia Docs — Custom LLM Adapters](https://lamia-lang.github.io/lamia/user-guide/custom-llm-adapters/) for the adapter API and implementation guide.
+Lamia supports custom LLM adapters for providers not built into the system. These are Python files placed in the `extensions/adapters/` folder of your project. See [Lamia Docs — Custom LLM Adapters](https://lamia-lang.github.io/lamia/user-guide/custom-llm-adapters/) for the adapter API and implementation guide.
 
-### Creating an Adapter and registering
+### Creating an Adapter
 
-An adapter is a Python file that implements the Lamia LLM adapter interface. Place it in your project directory or the global adapters folder.
+An adapter is a Python file that implements the Lamia LLM adapter interface. The file name should match the provider name returned by the adapter's `name()` method — for example, a provider named `"my_provider"` should live in `my_provider.py`.
+
+Place it in your project's `extensions/adapters/` folder:
+
+```text
+your-project/
+├── extensions/
+│   └── adapters/
+│       └── my_provider.py
+└── config.yaml
+```
+
+Lamia Studio automatically copies custom adapters from your workspace into the IDE's internal folder (`~/.lamia/ide/extensions/adapters/`). The copied file is named after the provider name from the adapter's `name()` classmethod, ensuring unique identification.
 
 Add the adapter's provider to your `config.yaml`:
 
 ```yaml
-
 model_chain:
-  - name: "my_custom_provider:my-model-v1"
+  - name: "my_provider:my-model-v1"
     max_retries: 3
 ```
 
@@ -41,6 +52,20 @@ model_chain:
 For custom providers that require API keys, add the key to `~/.lamia/.env`:
 
 ```
-# The LLM adapter implementation requires specifying the name of the API key name in the python file
+# The env var name is defined by the adapter's env_var_names() method
 MY_PROVIDER_API_KEY=your-key-here
 ```
+
+### Listing Available Models
+
+Use the CLI to discover models from any provider:
+
+```bash
+# List models from all configured providers
+lamia models
+
+# List models from a specific provider
+lamia models --provider anthropic
+```
+
+Custom adapters can support this by implementing the `models()` classmethod.

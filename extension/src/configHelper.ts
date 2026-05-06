@@ -1,8 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { execFile } from "child_process";
 import * as vscode from "vscode";
 import { getApiKey, getConfiguredProviders } from "./envHelper";
+import { LamiaProcess } from "./lamiaProcess";
 
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
 
@@ -12,12 +14,19 @@ interface ModelEntry {
 }
 
 export type ModelList = Record<string, ModelEntry[]>;
+export type ModelOption = { value: string; label: string; disabled?: boolean; provider?: string; isCustom?: boolean };
 
 export interface SubProjectInfo {
   name: string;
   root: string;
   configPath: string;
 }
+
+type LamiaModelsOutput = Record<string, string[]>;
+const NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic", "ollama"]);
+const PRIMARY_NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic"]);
+const MAX_DEFAULT_MODELS = 12;
+const MODEL_SEPARATOR: ModelOption = { value: "__separator__", label: "────────────────", disabled: true };
 
 export function readProjectModels(): string[] {
   const configPath = findConfigYaml();
@@ -64,6 +73,12 @@ export function readAllProviderModels(): { chain: string[]; providerModels: Reco
 export function findAllConfigYamls(): SubProjectInfo[] {
   const results: SubProjectInfo[] = [];
   const visited = new Set<string>();
+
+  const ideConfig = path.join(LAMIA_HOME, "ide", "config.yaml");
+  if (fs.existsSync(ideConfig)) {
+    visited.add(ideConfig);
+    results.push({ name: "ide", root: path.join(LAMIA_HOME, "ide"), configPath: ideConfig });
+  }
 
   const folders = vscode.workspace.workspaceFolders;
   if (folders) {
@@ -184,11 +199,11 @@ function parseProviderModels(yamlContent: string): Record<string, string[]> {
         if (trimmed.startsWith("- name:")) {
           const raw = trimmed.replace("- name:", "").trim().replace(/^["']|["']$/g, "");
           const name = stripComment(raw);
-          if (name) result[currentProvider].push(`${currentProvider}:${name}`);
+          if (name) result[currentProvider].push(ensureProviderPrefix(name, currentProvider));
         } else {
           const raw = trimmed.slice(2).trim().replace(/^["']|["']$/g, "");
           const name = stripComment(raw);
-          if (name) result[currentProvider].push(`${currentProvider}:${name}`);
+          if (name) result[currentProvider].push(ensureProviderPrefix(name, currentProvider));
         }
         continue;
       }
@@ -269,45 +284,162 @@ export async function fetchFallbackModels(): Promise<ModelList> {
   }
 }
 
+export async function fetchRuntimeProviderModels(configPath?: string): Promise<LamiaModelsOutput> {
+  let cliPath: string;
+  try {
+    cliPath = await LamiaProcess.resolveCliPath();
+  } catch {
+    return {};
+  }
+
+  const args: string[] = [];
+  if (configPath) {
+    args.push("--config", configPath);
+  }
+  args.push("models");
+
+  const cwd = LamiaProcess.resolveWorkingDirForFile(vscode.window.activeTextEditor?.document.uri.fsPath);
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
+
+  const openaiKey = getApiKey("openai");
+  if (openaiKey) env.OPENAI_API_KEY = openaiKey;
+  const anthropicKey = getApiKey("anthropic");
+  if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
+
+  try {
+    const stdout = await new Promise<string>((resolve, reject) => {
+      execFile(cliPath, args, { cwd, env, timeout: 20000 }, (error, out, stderr) => {
+        if (error) {
+          reject(new Error(String(stderr || error.message || "failed")));
+          return;
+        }
+        resolve(out || "");
+      });
+    });
+    return parseLamiaModelsOutput(stdout);
+  } catch {
+    return {};
+  }
+}
+
 export function buildModelDropdown(
   projectModels: string[],
-  _providerModels: Record<string, string[]>,
+  providerModels: Record<string, string[]>,
   fallbackModels: ModelList,
   configuredProviders: string[]
-): { value: string; label: string }[] {
+): { defaultModels: ModelOption[]; allModels: ModelOption[] } {
   const seen = new Set<string>();
-  const items: { value: string; label: string }[] = [];
+  const allItems: ModelOption[] = [];
+  const customItems: ModelOption[] = [];
 
   const fallbackLabelMap = new Map<string, string>();
   for (const [provider, models] of Object.entries(fallbackModels)) {
     for (const model of models) {
-      fallbackLabelMap.set(`${provider}:${model.id}`, modelLabel(model.label, provider));
+      const full = ensureProviderPrefix(model.id, provider);
+      fallbackLabelMap.set(normalizeModelKey(full), modelLabel(model.label, provider));
     }
   }
+
+  const addModel = (
+    rawModel: string,
+    providerHint?: string,
+    options?: { forceCustom?: boolean },
+  ) => {
+    const fullModel = ensureProviderPrefix(rawModel, providerHint);
+    if (!fullModel) return;
+    const key = normalizeModelKey(fullModel);
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const provider = getProvider(fullModel) || (providerHint || "unknown");
+    const friendly = fallbackLabelMap.get(key);
+    const label = friendly || humanLabel(fullModel);
+    const item: ModelOption = {
+      value: fullModel,
+      label,
+      provider,
+      isCustom: !!options?.forceCustom || isCustomProvider(provider),
+    };
+    if (item.isCustom) {
+      customItems.push(item);
+    } else {
+      allItems.push(item);
+    }
+  };
 
   for (const m of projectModels) {
-    if (seen.has(m)) continue;
-    seen.add(m);
-    const friendly = fallbackLabelMap.get(m);
-    items.push({ value: m, label: friendly || humanLabel(m) });
+    addModel(m, undefined, { forceCustom: true });
   }
 
-  for (const [provider, models] of Object.entries(fallbackModels)) {
+  // Runtime/API models — only present when the key was accepted by the provider.
+  for (const [provider, models] of Object.entries(providerModels)) {
     for (const model of models) {
-      const full = `${provider}:${model.id}`;
-      if (seen.has(full)) continue;
-      seen.add(full);
-      const hasKey = configuredProviders.includes(provider);
-      const label = modelLabel(model.label, provider) + (hasKey ? "" : " \u{1F512}");
-      items.push({ value: full, label });
+      addModel(model, provider);
     }
   }
 
-  return items;
+  // Fallback: only for providers that have a configured key but returned
+  // zero runtime models (API momentarily unreachable).  Never show models
+  // for providers without a key — they won't work.
+  for (const [provider, models] of Object.entries(fallbackModels)) {
+    if (!configuredProviders.includes(provider)) continue;
+    const hasRuntimeModels = (providerModels[provider] || []).length > 0;
+    if (hasRuntimeModels) continue;
+    for (const model of models) {
+      addModel(model.id, provider);
+    }
+  }
+
+  const defaultOthers = pickDefaultModels(allItems);
+  const allModels = joinWithSeparator(customItems, allItems);
+  const defaultModels = joinWithSeparator(customItems, defaultOthers);
+  return { defaultModels, allModels };
+}
+
+function parseLamiaModelsOutput(output: string): LamiaModelsOutput {
+  const modelsByProvider: LamiaModelsOutput = {};
+  const lines = output.split(/\r?\n/);
+  let currentProvider = "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const header = trimmed.match(/^([a-zA-Z0-9._-]+)\s+\(\d+\s+models\):$/);
+    if (header) {
+      currentProvider = header[1];
+      if (!modelsByProvider[currentProvider]) {
+        modelsByProvider[currentProvider] = [];
+      }
+      continue;
+    }
+
+    const nonListHeader = trimmed.match(/^([a-zA-Z0-9._-]+):\s+(skipped|error|no models found)/);
+    if (nonListHeader) {
+      currentProvider = "";
+      continue;
+    }
+
+    if (!currentProvider) continue;
+    if (!line.startsWith("  ")) continue;
+
+    const modelId = trimmed;
+    if (!modelId) continue;
+
+    const fullName = ensureProviderPrefix(modelId, currentProvider);
+    const target = modelsByProvider[currentProvider];
+    if (fullName && !target.includes(fullName)) {
+      target.push(fullName);
+    }
+  }
+
+  return modelsByProvider;
 }
 
 function modelLabel(label: string, provider: string): string {
-  return provider === "ollama" ? `${label} (ollama)` : label;
+  return shouldShowProviderSuffix(provider) ? `${label} (${provider})` : label;
 }
 
 function humanLabel(providerModel: string): string {
@@ -315,7 +447,54 @@ function humanLabel(providerModel: string): string {
   if (parts.length < 2) return stripComment(providerModel);
   const model = stripComment(parts.slice(1).join(":"));
   const provider = parts[0];
-  return provider === "ollama" ? `${model} (ollama)` : model;
+  return shouldShowProviderSuffix(provider) ? `${model} (${provider})` : model;
+}
+
+function normalizeModelKey(providerModel: string): string {
+  return providerModel.trim().toLowerCase();
+}
+
+function getProvider(providerModel: string): string | null {
+  const idx = providerModel.indexOf(":");
+  if (idx <= 0) return null;
+  return providerModel.slice(0, idx).trim();
+}
+
+function ensureProviderPrefix(model: string, providerHint?: string): string {
+  const raw = stripComment(model).trim();
+  if (!raw) return "";
+  if (raw.includes(":")) return raw;
+  if (!providerHint) return raw;
+  return `${providerHint}:${raw}`;
+}
+
+function isCustomProvider(provider: string): boolean {
+  return !NATIVE_PROVIDERS.has(provider);
+}
+
+function pickDefaultModels(allItems: ModelOption[]): ModelOption[] {
+  const popular = allItems.filter((item) => {
+    const provider = item.provider || "";
+    return PRIMARY_NATIVE_PROVIDERS.has(provider);
+  });
+  if (popular.length > 0) {
+    return popular.slice(0, MAX_DEFAULT_MODELS);
+  }
+  return allItems.filter((item) => (item.provider || "") !== "ollama").slice(0, MAX_DEFAULT_MODELS);
+}
+
+function joinWithSeparator(top: ModelOption[], rest: ModelOption[]): ModelOption[] {
+  if (top.length === 0) {
+    return [...rest];
+  }
+  if (rest.length === 0) {
+    return [...top];
+  }
+  return [...top, MODEL_SEPARATOR, ...rest];
+}
+
+function shouldShowProviderSuffix(provider: string): boolean {
+  return provider === "ollama" || isCustomProvider(provider);
 }
 
 function stripComment(s: string): string {

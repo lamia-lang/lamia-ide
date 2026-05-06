@@ -3,10 +3,11 @@ import { LamiaProcess, FileWrite } from "./lamiaProcess";
 import { setApiKey, getConfiguredProviders } from "./envHelper";
 import {
   readAllProviderModels,
+  fetchRuntimeProviderModels,
   fetchFallbackModels,
   buildModelDropdown,
   ensureGlobalConfig,
-  ModelList,
+  ModelOption,
 } from "./configHelper";
 import {
   Chat,
@@ -65,11 +66,18 @@ type HostMessage =
   | { type: "addFile"; file: { name: string; relativePath: string; absolutePath: string } }
   | {
       type: "init";
-      models: { value: string; label: string }[];
+      models: ModelOption[];
+      allModels: ModelOption[];
       configuredProviders: string[];
       selectedModel: string | null;
       messages: ChatMessage[];
       chatTitle: string;
+    }
+  | {
+      type: "updateModels";
+      models: ModelOption[];
+      allModels: ModelOption[];
+      configuredProviders: string[];
     }
   | {
       type: "fileList";
@@ -157,6 +165,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
   constructor(private readonly _context: vscode.ExtensionContext) {
     this._chat = loadLatestChat() || newChat();
+
+    this._context.subscriptions.push(
+      vscode.workspace.onDidChangeWorkspaceFolders(() => this._refreshModels())
+    );
+
+    const configWatcher = vscode.workspace.createFileSystemWatcher("**/config.yaml");
+    configWatcher.onDidChange(() => this._refreshModels());
+    configWatcher.onDidCreate(() => this._refreshModels());
+    configWatcher.onDidDelete(() => this._refreshModels());
+    this._context.subscriptions.push(configWatcher);
   }
 
   public resolveWebviewView(
@@ -771,22 +789,67 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   // ── Init ───────────────────────────────────────────────────────────────────
 
   private async _sendInit(): Promise<void> {
+    ensureChatConfig();
     const configuredProviders = getConfiguredProviders();
     const { chain, providerModels } = readAllProviderModels();
+    const runtimeModels = await fetchRuntimeProviderModels(getChatConfigPath());
+    const mergedProviderModels: Record<string, string[]> = {};
+    for (const source of [runtimeModels, providerModels]) {
+      for (const [provider, models] of Object.entries(source)) {
+        if (!mergedProviderModels[provider]) {
+          mergedProviderModels[provider] = [];
+        }
+        for (const model of models) {
+          if (!mergedProviderModels[provider].includes(model)) {
+            mergedProviderModels[provider].push(model);
+          }
+        }
+      }
+    }
     const fallback = await fetchFallbackModels();
-    const models = buildModelDropdown(chain, providerModels, fallback, configuredProviders);
+    const dropdown = buildModelDropdown(chain, mergedProviderModels, fallback, configuredProviders);
 
     const selectedModel = readSelectedModel();
 
     this._post({
       type: "init",
-      models,
+      models: dropdown.defaultModels,
+      allModels: dropdown.allModels,
       configuredProviders,
       selectedModel,
       messages: this._chat.messages.map(m => (
         m.role === "assistant" ? { ...m, text: this._sanitizeAssistantResponse(m.text) } : m
       )),
       chatTitle: this._chat.title,
+    });
+  }
+
+  private async _refreshModels(): Promise<void> {
+    if (!this._view) return;
+    ensureChatConfig();
+    const configuredProviders = getConfiguredProviders();
+    const { chain, providerModels } = readAllProviderModels();
+    const runtimeModels = await fetchRuntimeProviderModels(getChatConfigPath());
+    const mergedProviderModels: Record<string, string[]> = {};
+    for (const source of [runtimeModels, providerModels]) {
+      for (const [provider, models] of Object.entries(source)) {
+        if (!mergedProviderModels[provider]) {
+          mergedProviderModels[provider] = [];
+        }
+        for (const model of models) {
+          if (!mergedProviderModels[provider].includes(model)) {
+            mergedProviderModels[provider].push(model);
+          }
+        }
+      }
+    }
+    const fallback = await fetchFallbackModels();
+    const dropdown = buildModelDropdown(chain, mergedProviderModels, fallback, configuredProviders);
+    this._post({
+      type: "updateModels",
+      models: dropdown.defaultModels,
+      allModels: dropdown.allModels,
+      configuredProviders,
     });
   }
 
@@ -1176,6 +1239,46 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
     #empty-state .icon { font-size: 32px; }
     #empty-state p { font-size: 12px; line-height: 1.5; }
+
+    /* ── Add Models dialog ─────────────────────────────────────────────── */
+    #add-models-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #add-models-overlay.hidden { display: none; }
+    #add-models-dialog {
+      background: var(--vscode-editor-background, #1e1e1e);
+      border: 1px solid var(--vscode-panel-border, #444);
+      border-radius: 6px;
+      width: 90%; max-width: 420px; max-height: 70vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #add-models-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--vscode-panel-border, #444);
+      font-size: 13px; font-weight: 600;
+    }
+    #add-models-list {
+      overflow-y: auto; flex: 1;
+      padding: 4px 0;
+    }
+    .add-model-row {
+      padding: 6px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .add-model-row:hover {
+      background: var(--vscode-list-hoverBackground, #2a2d2e);
+    }
+    .add-model-row.selected {
+      background: var(--vscode-list-activeSelectionBackground, #094771);
+      color: var(--vscode-list-activeSelectionForeground, #fff);
+    }
   </style>
 </head>
 <body>
@@ -1187,6 +1290,17 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     <button class="icon-btn" id="new-chat-btn" title="New chat">&#43;</button>
     <button class="icon-btn" id="history-btn" title="Chat history"><svg width="12" height="12" viewBox="0 0 16 16" style="vertical-align:-1px"><circle cx="8" cy="8" r="6.5" stroke="currentColor" fill="none" stroke-width="1.4"/><line x1="8" y1="5" x2="8" y2="8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="8" y1="8.5" x2="10.5" y2="8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <button class="icon-btn" id="settings-btn" title="API key settings">&#9881;</button>
+  </div>
+
+  <!-- Add Models dialog -->
+  <div id="add-models-overlay" class="hidden">
+    <div id="add-models-dialog">
+      <div id="add-models-header">
+        <span>All Available Models</span>
+        <button class="icon-btn" id="close-models-btn" title="Close">&times;</button>
+      </div>
+      <div id="add-models-list"></div>
+    </div>
   </div>
 
   <!-- Chat history -->
@@ -1235,7 +1349,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   <script nonce="${nonce}">
     const vscodeApi = acquireVsCodeApi();
 
-    let allModels = [];
+    let visibleModels = [];
+    let allModelsCatalog = [];
     let configuredProviders = [];
 
     function formatMeta(model, tokens) {
@@ -1291,13 +1406,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       sel.innerHTML = "";
 
       let hasOptions = false;
-      for (const m of allModels) {
+      for (const m of visibleModels) {
         const opt = document.createElement("option");
         opt.value = m.value;
         opt.textContent = m.label;
+        if (m.disabled) opt.disabled = true;
         if (opt.value === prev) opt.selected = true;
         sel.appendChild(opt);
-        hasOptions = true;
+        if (!opt.disabled) hasOptions = true;
       }
 
       if (!hasOptions) {
@@ -1307,6 +1423,73 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         opt.disabled = true;
         sel.appendChild(opt);
       }
+
+      if (allModelsCatalog.length > visibleModels.length) {
+        const sep = document.createElement("option");
+        sep.value = "__separator__";
+        sep.textContent = "────────────────";
+        sep.disabled = true;
+        sel.appendChild(sep);
+
+        const addOpt = document.createElement("option");
+        addOpt.value = "__add_models__";
+        addOpt.textContent = "Add Models\u2026";
+        sel.appendChild(addOpt);
+      }
+    }
+
+    function openAddModelsDialog() {
+      const overlay = document.getElementById("add-models-overlay");
+      const list = document.getElementById("add-models-list");
+      list.innerHTML = "";
+
+      const currentModel = document.getElementById("model-select").value;
+
+      for (const m of allModelsCatalog) {
+        if (m.disabled) continue;
+        const row = document.createElement("div");
+        row.className = "add-model-row";
+        if (m.value === currentModel) row.classList.add("selected");
+        row.textContent = m.label;
+        row.addEventListener("click", function () {
+          selectModelFromDialog(m.value);
+        });
+        list.appendChild(row);
+      }
+
+      overlay.classList.remove("hidden");
+    }
+
+    function selectModelFromDialog(modelValue) {
+      closeAddModelsDialog();
+      const sel = document.getElementById("model-select");
+      let found = false;
+      for (const opt of sel.options) {
+        if (opt.value === modelValue) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const matchingModel = allModelsCatalog.find(function (m) { return m.value === modelValue; });
+        if (matchingModel) {
+          const sep = sel.querySelector('option[value="__separator__"]');
+          const newOpt = document.createElement("option");
+          newOpt.value = matchingModel.value;
+          newOpt.textContent = matchingModel.label;
+          if (sep) {
+            sel.insertBefore(newOpt, sep);
+          } else {
+            sel.appendChild(newOpt);
+          }
+        }
+      }
+      sel.value = modelValue;
+      onModelChange();
+    }
+
+    function closeAddModelsDialog() {
+      document.getElementById("add-models-overlay").classList.add("hidden");
     }
 
     // ── Messages ──────────────────────────────────────────────────────────
@@ -1622,7 +1805,15 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     // ── State ─────────────────────────────────────────────────────────────
 
     function onModelChange() {
-      const model = document.getElementById("model-select")?.value;
+      const sel = document.getElementById("model-select");
+      const model = sel?.value;
+      if (model === "__separator__") return;
+      if (model === "__add_models__") {
+        const state = vscodeApi.getState() || {};
+        sel.value = state.selectedModel || "";
+        openAddModelsDialog();
+        return;
+      }
       if (model) {
         vscodeApi.postMessage({ type: "changeModel", model });
         vscodeApi.setState({ selectedModel: model });
@@ -1812,6 +2003,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       document.getElementById("chat-history-panel").classList.add("hidden");
       vscodeApi.postMessage({ type: "newChat" });
     });
+    document.getElementById("close-models-btn").addEventListener("click", closeAddModelsDialog);
+    document.getElementById("add-models-overlay").addEventListener("click", function(e) {
+      if (e.target === this) closeAddModelsDialog();
+    });
     document.getElementById("history-btn").addEventListener("click", toggleHistory);
     document.getElementById("settings-btn").addEventListener("click", toggleSetup);
     document.getElementById("model-select").addEventListener("change", onModelChange);
@@ -1948,7 +2143,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         const msg = event.data;
         switch (msg.type) {
         case "init":
-          allModels = msg.models;
+          visibleModels = msg.models || [];
+          allModelsCatalog = msg.allModels || msg.models || [];
           configuredProviders = msg.configuredProviders;
           populateModels(msg.selectedModel);
           updateSetupStatus();
@@ -1959,6 +2155,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           } else {
             document.getElementById("setup-panel").classList.add("hidden");
           }
+          break;
+        case "updateModels":
+          visibleModels = msg.models || [];
+          allModelsCatalog = msg.allModels || msg.models || [];
+          configuredProviders = msg.configuredProviders;
+          populateModels(null);
+          updateSetupStatus();
           break;
         case "toolProgress":
           addToolProgress(msg.label);

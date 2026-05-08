@@ -56,7 +56,7 @@ type WebviewMessage =
 type HostMessage =
   | { type: "response"; text: string; model?: string; tokens?: { input: number; output: number } }
   | { type: "clipboardContext"; snippet: CopiedSnippet | null }
-  | { type: "error"; text: string }
+  | { type: "error"; text: string; errorType?: string }
   | { type: "thinking"; active: boolean }
   | { type: "toolProgress"; tool: string; label: string }
   | { type: "toolResult"; tool: string; success: boolean; error?: string }
@@ -635,7 +635,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
             }
           } else if (response.type === "error") {
             this._savePartialProgress(completedTools, response.message || "Unknown error");
-            this._post({ type: "error", text: response.message || "Unknown error" });
+            this._post({
+              type: "error",
+              text: response.message || "Unknown error",
+              errorType: response.error_type,
+            });
           }
         } catch (err: any) {
           if (err.message === "Aborted") {
@@ -1024,6 +1028,23 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-errorForeground); border-radius: 8px;
       border: 1px solid var(--vscode-inputValidation-errorBorder, #f00);
     }
+    .message.error.error-auth .message-bubble {
+      background: rgba(200,0,0,0.18);
+      border-color: var(--vscode-inputValidation-errorBorder, #f00);
+    }
+    .message.error.error-rate_limit .message-bubble,
+    .message.error.error-timeout .message-bubble,
+    .message.error.error-network .message-bubble {
+      background: var(--vscode-inputValidation-warningBackground, rgba(200,150,0,0.15));
+      border-color: var(--vscode-inputValidation-warningBorder, #fa0);
+      color: var(--vscode-editorWarning-foreground, #fa0);
+    }
+    .error-action-btn {
+      display: inline-block; margin-top: 6px; padding: 3px 10px;
+      font-size: 11px; border-radius: 3px; cursor: pointer; border: none;
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    }
+    .error-action-btn:hover { background: var(--vscode-button-hoverBackground); }
     .message-label {
       font-size: 10px; opacity: 0.5; margin-bottom: 3px;
       text-transform: uppercase; letter-spacing: 0.04em;
@@ -2187,16 +2208,30 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           completeToolProgress();
           removeThinking();
           setGenerating(false);
+          var eType = msg.errorType || "provider";
           const errEl = appendMessage("error", msg.text, undefined);
           if (errEl) {
-            var retryBtn = document.createElement("button");
-            retryBtn.className = "fc-btn";
-            retryBtn.textContent = "Retry";
-            retryBtn.style.marginTop = "6px";
-            retryBtn.addEventListener("click", function() {
-              vscodeApi.postMessage({ type: "retry" });
-            });
-            errEl.querySelector(".message-bubble").appendChild(retryBtn);
+            errEl.classList.add("error-" + eType);
+            var bubble = errEl.querySelector(".message-bubble");
+            if (eType === "auth") {
+              var keyBtn = document.createElement("button");
+              keyBtn.className = "error-action-btn";
+              keyBtn.textContent = "Update API Key";
+              keyBtn.addEventListener("click", function() {
+                var settingsBtn = document.getElementById("settings-btn");
+                if (settingsBtn) settingsBtn.click();
+              });
+              bubble.appendChild(keyBtn);
+            }
+            if (eType !== "auth" && eType !== "quota") {
+              var retryBtn = document.createElement("button");
+              retryBtn.className = "error-action-btn";
+              retryBtn.textContent = "Retry";
+              retryBtn.addEventListener("click", function() {
+                vscodeApi.postMessage({ type: "retry" });
+              });
+              bubble.appendChild(retryBtn);
+            }
           }
           document.getElementById("send-btn").disabled = false;
           break;

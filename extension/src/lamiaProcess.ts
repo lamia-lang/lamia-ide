@@ -13,10 +13,14 @@ export interface FileWrite {
   original?: string;
 }
 
+export type LLMErrorType = "auth" | "rate_limit" | "quota" | "timeout" | "network" | "provider";
+
 export interface LamiaResponse {
   type: "response" | "error" | "ready";
   text?: string;
   message?: string;
+  error_type?: LLMErrorType;
+  status?: number;
   model?: string;
   tokens?: { input: number; output: number; total: number };
   files?: FileWrite[];

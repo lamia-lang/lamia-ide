@@ -16,6 +16,7 @@ import { LamiaDebugConfigProvider } from "./lamiaDebugConfigProvider";
 import { LamiaDebugSession } from "./lamiaDebugSession";
 import { resolveLamiaCli } from "./lamiaDebugRuntime";
 import { collectSystemInfo } from "./systemInfo";
+import { LamiaExecutableDecorationProvider } from "./executableDecorationProvider";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -85,6 +86,23 @@ export function activate(context: vscode.ExtensionContext) {
   symbolWatcher.onDidDelete(() => invalidateSymbols());
   symbolWatcher.onDidChange(() => invalidateSymbols());
   context.subscriptions.push(symbolWatcher);
+
+  const execDecoProvider = new LamiaExecutableDecorationProvider();
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(execDecoProvider)
+  );
+  const lmContentWatcher = vscode.workspace.createFileSystemWatcher("**/*.lm");
+  lmContentWatcher.onDidChange((uri) => execDecoProvider.invalidate(uri));
+  lmContentWatcher.onDidCreate((uri) => execDecoProvider.invalidate(uri));
+  lmContentWatcher.onDidDelete((uri) => execDecoProvider.invalidate(uri));
+  context.subscriptions.push(lmContentWatcher);
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document.uri.fsPath.endsWith(".lm")) {
+        execDecoProvider.invalidate(e.document.uri);
+      }
+    })
+  );
 
   const chatProvider = new LamiaChatProvider(context);
   _chatProvider = chatProvider;

@@ -31,7 +31,8 @@ export type FlagType =
   | "empty_response"
   | "no_op_turn"
   | "internal_context_leak"
-  | "claim_without_evidence";
+  | "claim_without_evidence"
+  | "py_instead_of_lamia";
 
 export interface ReviewFlag {
   type: FlagType;
@@ -203,6 +204,20 @@ function checkClaimWithoutEvidence(
   };
 }
 
+function checkPyInsteadOfLamia(fileWrites: FileWrite[]): ReviewFlag | null {
+  const pyCreates = fileWrites.filter(
+    f => f.action === "create" && f.path.endsWith(".py")
+  );
+  if (pyCreates.length === 0) return null;
+
+  const file = pyCreates[0];
+  return {
+    type: "py_instead_of_lamia",
+    detail: `Created "${file.path}" as a .py file — this project uses Lamia (.lm); the LLM judge should verify whether this should be a .lm file instead`,
+    evidence: { path: file.path },
+  };
+}
+
 // ── Main review function ─────────────────────────────────────────────────────
 
 export function reviewCompletion(input: ReviewInput): ReviewResult {
@@ -231,6 +246,9 @@ export function reviewCompletion(input: ReviewInput): ReviewResult {
     input.fileWrites
   );
   if (claimNoEvidence) flags.push(claimNoEvidence);
+
+  const pyLamia = checkPyInsteadOfLamia(input.fileWrites);
+  if (pyLamia) flags.push(pyLamia);
 
   return {
     verdict: flags.length > 0 ? "flag" : "pass",

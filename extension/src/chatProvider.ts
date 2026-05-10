@@ -1180,8 +1180,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       padding: 4px 10px;
     }
     .tool-step {
-      display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap;
+      display: flex; align-items: center; gap: 6px;
       font-size: 12px; opacity: 0.7; line-height: 1.4;
+      min-width: 0;
+    }
+    .tool-step > span:last-child {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      min-width: 0;
     }
     .tool-step .ts-spinner {
       width: 12px; height: 12px; flex-shrink: 0;

@@ -1,4 +1,5 @@
 import * as path from "path";
+import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import * as vscode from "vscode";
 import { LamiaChatProvider } from "./chatProvider";
 import { LamiaDefinitionProvider } from "./definitionProvider";
@@ -20,6 +21,65 @@ import { LamiaExecutableDecorationProvider } from "./executableDecorationProvide
 import { FileReferenceCompletionProvider } from "./fileReferenceCompletionProvider";
 
 let _chatProvider: LamiaChatProvider | undefined;
+let _runningExecution: vscode.TaskExecution | undefined;
+
+function setRunning(running: boolean): void {
+  vscode.commands.executeCommand("setContext", "lamia.isRunning", running);
+}
+
+class LamiaRunPseudoTerminal implements vscode.Pseudoterminal {
+  private readonly _writeEmitter = new vscode.EventEmitter<string>();
+  readonly onDidWrite: vscode.Event<string> = this._writeEmitter.event;
+
+  private readonly _closeEmitter = new vscode.EventEmitter<number>();
+  readonly onDidClose: vscode.Event<number> = this._closeEmitter.event;
+
+  private _proc: ChildProcessWithoutNullStreams | null = null;
+
+  constructor(
+    private readonly _cli: string,
+    private readonly _fileName: string,
+    private readonly _cwd: string,
+  ) {}
+
+  open(): void {
+    this._proc = spawn(this._cli, [this._fileName], {
+      cwd: this._cwd,
+      env: process.env,
+    });
+
+    this._proc.stdout.on("data", (chunk: Buffer | string) => {
+      this._writeEmitter.fire(chunk.toString().replace(/\r?\n/g, "\r\n"));
+    });
+    this._proc.stderr.on("data", (chunk: Buffer | string) => {
+      this._writeEmitter.fire(chunk.toString().replace(/\r?\n/g, "\r\n"));
+    });
+
+    this._proc.on("error", (err) => {
+      this._writeEmitter.fire(`Failed to start Lamia process: ${err.message}\r\n`);
+      this._closeEmitter.fire(1);
+      this._proc = null;
+    });
+
+    this._proc.on("close", (code) => {
+      this._closeEmitter.fire(code ?? 0);
+      this._proc = null;
+    });
+  }
+
+  handleInput(data: string): void {
+    if (data === "\u0003" && this._proc && !this._proc.killed) {
+      this._proc.kill("SIGINT");
+    }
+  }
+
+  close(): void {
+    if (this._proc && !this._proc.killed) {
+      this._proc.kill("SIGTERM");
+    }
+    this._proc = null;
+  }
+}
 
 export function activate(context: vscode.ExtensionContext) {
   writeIdePath();
@@ -137,11 +197,16 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("lamia.run", () => {
+    vscode.commands.registerCommand("lamia.run", async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !editor.document.fileName.endsWith(".lm")) {
         vscode.window.showWarningMessage("Open a .lm file to run it");
         return;
+      }
+
+      if (_runningExecution) {
+        _runningExecution.terminate();
+        _runningExecution = undefined;
       }
 
       const filePath = editor.document.fileName;
@@ -149,12 +214,46 @@ export function activate(context: vscode.ExtensionContext) {
       const fileName = path.basename(filePath);
       const cli = resolveLamiaCli();
 
-      const terminal =
-        vscode.window.terminals.find((t) => t.name === "Lamia") ??
-        vscode.window.createTerminal({ name: "Lamia", cwd: fileDir });
+      const taskDef: vscode.TaskDefinition = { type: "lamia", file: filePath };
+      const execution = new vscode.CustomExecution(async () => {
+        return new LamiaRunPseudoTerminal(cli, fileName, fileDir);
+      });
+      const task = new vscode.Task(
+        taskDef,
+        vscode.TaskScope.Workspace,
+        `Run ${fileName}`,
+        "lamia",
+        execution,
+        [],
+      );
+      task.presentationOptions = {
+        reveal: vscode.TaskRevealKind.Always,
+        panel: vscode.TaskPanelKind.Shared,
+        clear: true,
+        showReuseMessage: false,
+      };
 
-      terminal.show();
-      terminal.sendText(`cd "${fileDir}" && "${cli}" "${fileName}"`);
+      _runningExecution = await vscode.tasks.executeTask(task);
+      setRunning(true);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.stop", () => {
+      if (_runningExecution) {
+        _runningExecution.terminate();
+        _runningExecution = undefined;
+        setRunning(false);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.tasks.onDidEndTask((e) => {
+      if (_runningExecution && e.execution === _runningExecution) {
+        _runningExecution = undefined;
+        setRunning(false);
+      }
     })
   );
 

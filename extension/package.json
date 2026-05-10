@@ -82,6 +82,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "lamia.stop",
+        "title": "Lamia: Stop Running File",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "lamia.debug",
         "title": "Lamia: Debug Current File",
         "icon": "$(bug)"
@@ -112,6 +117,13 @@
           "group": "2_debug"
         }
       ],
+      "editor/title": [
+        {
+          "command": "lamia.stop",
+          "when": "resourceExtname == .lm && lamia.isRunning",
+          "group": "navigation"
+        }
+      ],
       "explorer/context": [
         {
           "command": "lamia.run",
@@ -131,6 +143,12 @@
         "key": "ctrl+shift+r",
         "mac": "cmd+shift+r",
         "when": "resourceExtname == .lm"
+      },
+      {
+        "command": "lamia.stop",
+        "key": "ctrl+shift+f5",
+        "mac": "cmd+shift+f5",
+        "when": "lamia.isRunning"
       },
       {
         "command": "lamia.openChat",

@@ -17,6 +17,7 @@ import { LamiaDebugSession } from "./lamiaDebugSession";
 import { resolveLamiaCli } from "./lamiaDebugRuntime";
 import { collectSystemInfo } from "./systemInfo";
 import { LamiaExecutableDecorationProvider } from "./executableDecorationProvider";
+import { FileReferenceCompletionProvider } from "./fileReferenceCompletionProvider";
 
 let _chatProvider: LamiaChatProvider | undefined;
 
@@ -45,6 +46,20 @@ export function activate(context: vscode.ExtensionContext) {
       { language: "lamia" },
       completionProvider,
       "(", ",",
+    ),
+  );
+
+  const fileRefProvider = new FileReferenceCompletionProvider();
+  context.subscriptions.push(
+    vscode.languages.registerCompletionItemProvider(
+      { language: "lamia" },
+      fileRefProvider,
+      "@",
+    ),
+    vscode.languages.registerCompletionItemProvider(
+      { language: "lamia-prompt" },
+      fileRefProvider,
+      "@",
     ),
   );
 

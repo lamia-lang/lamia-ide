@@ -1,3 +1,4 @@
+import * as path from "path";
 import * as vscode from "vscode";
 import { getHuSymbols, findHuByName, HuSymbol, HuParam } from "./symbolIndex";
 
@@ -29,6 +30,12 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
     const prefix = wordMatch[1].toLowerCase();
     const symbols = getHuSymbols(ctxFile);
+    const ctxDir = path.dirname(ctxFile);
+    symbols.sort((a, b) => {
+      const distA = path.relative(ctxDir, path.dirname(a.filePath)).split(path.sep).length;
+      const distB = path.relative(ctxDir, path.dirname(b.filePath)).split(path.sep).length;
+      return distA - distB;
+    });
     const items: vscode.CompletionItem[] = [];
 
     for (const sym of symbols) {
@@ -43,16 +50,17 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
       const optParams = sym.paramDetails.filter((p) => !p.required);
       const docParts: string[] = [];
       if (reqParams.length > 0) {
-        docParts.push(`Required: ${reqParams.map((p) => p.name).join(", ")}`);
+        docParts.push(`Required: ${reqParams.map((p) => formatParamDoc(p)).join(", ")}`);
       }
       if (optParams.length > 0) {
-        docParts.push(`Optional: ${optParams.map((p) => p.name).join(", ")}`);
+        docParts.push(`Optional: ${optParams.map((p) => formatParamDoc(p)).join(", ")}`);
       }
       item.documentation = docParts.length > 0 ? docParts.join("\n") : "No parameters";
 
-      if (reqParams.length > 0) {
-        const paramSnippet = reqParams
-          .map((p, i) => `${p.name}="\${${i + 1}}"`)
+      const allParams = [...reqParams, ...optParams];
+      if (allParams.length > 0) {
+        const paramSnippet = allParams
+          .map((p, i) => formatParamSnippet(p, i + 1))
           .join(", ");
         item.insertText = new vscode.SnippetString(`${sym.name}(${paramSnippet})`);
       } else {
@@ -80,13 +88,20 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
     const items: vscode.CompletionItem[] = [];
     for (const pd of sym.paramDetails) {
-      const label = pd.required ? `${pd.name}=` : `${pd.name}=  (optional)`;
+      const defaultDisplay = pd.defaultValue ? `=${formatDefaultDisplay(pd.defaultValue)}` : "";
+      const label = pd.required
+        ? `${pd.name}=`
+        : `${pd.name}${defaultDisplay}  (optional)`;
       const item = new vscode.CompletionItem(
         label,
         pd.required ? vscode.CompletionItemKind.Field : vscode.CompletionItemKind.Property,
       );
-      item.detail = pd.required ? `${sym.name} param (required)` : `${sym.name} param (optional)`;
-      item.insertText = new vscode.SnippetString(`${pd.name}="\${1}"`);
+      item.detail = pd.required
+        ? `${sym.name} param (required)`
+        : `${sym.name} param (optional, default: ${formatDefaultDisplay(pd.defaultValue ?? "")})`;
+      item.insertText = pd.isFileRef
+        ? new vscode.SnippetString(`${pd.name}="\${1:path/to/file}"`)
+        : formatParamInsert(pd);
       item.sortText = pd.required ? `0_${pd.name}` : `1_${pd.name}`;
       item.filterText = pd.name;
       items.push(item);
@@ -94,4 +109,45 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
     return items;
   }
+}
+
+function isPrimitiveLiteral(value: string): boolean {
+  return /^-?\d+(\.\d+)?$/.test(value) || value === "true" || value === "false";
+}
+
+function formatDefaultDisplay(value: string): string {
+  if (!value) return '""';
+  if (isPrimitiveLiteral(value)) return value;
+  return `"${value}"`;
+}
+
+function formatParamSnippet(p: HuParam, tabStop: number): string {
+  if (p.isFileRef) {
+    return `${p.name}="\${${tabStop}:path/to/file}"`;
+  }
+  if (!p.required && p.defaultValue) {
+    if (isPrimitiveLiteral(p.defaultValue)) {
+      return `${p.name}=\${${tabStop}:${p.defaultValue}}`;
+    }
+    return `${p.name}=\${${tabStop}:${p.defaultValue}}`;
+  }
+  return `${p.name}="\${${tabStop}}"`;
+}
+
+function formatParamInsert(p: HuParam): vscode.SnippetString {
+  if (!p.required && p.defaultValue) {
+    if (isPrimitiveLiteral(p.defaultValue)) {
+      return new vscode.SnippetString(`${p.name}=\${1:${p.defaultValue}}`);
+    }
+    return new vscode.SnippetString(`${p.name}=\${1:${p.defaultValue}}`);
+  }
+  return new vscode.SnippetString(`${p.name}="\${1}"`);
+}
+
+function formatParamDoc(p: HuParam): string {
+  if (p.isFileRef) return `${p.name} (file)`;
+  if (p.defaultValue) {
+    return `${p.name}=${formatDefaultDisplay(p.defaultValue)}`;
+  }
+  return p.name;
 }

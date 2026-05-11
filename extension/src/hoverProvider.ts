@@ -18,8 +18,12 @@ export class LamiaHoverProvider implements vscode.HoverProvider {
     const md = new vscode.MarkdownString();
     md.appendCodeblock(sig, "python");
 
-    const req = sym.paramDetails.filter((p) => p.required);
+    const fileRefs = sym.paramDetails.filter((p) => p.isFileRef);
+    const req = sym.paramDetails.filter((p) => p.required && !p.isFileRef);
     const opt = sym.paramDetails.filter((p) => !p.required);
+    if (fileRefs.length > 0) {
+      md.appendMarkdown(`\n**File refs:** ${fileRefs.map((p) => `\`${p.name}\``).join(", ")}\n`);
+    }
     if (req.length > 0) {
       md.appendMarkdown(`\n**Required:** ${req.map((p) => `\`${p.name}\``).join(", ")}\n`);
     }
@@ -35,7 +39,13 @@ export class LamiaHoverProvider implements vscode.HoverProvider {
 function buildSignature(name: string, params: HuParam[]): string {
   if (params.length === 0) return `${name}()`;
   const parts = params.map((p) => {
+    if (p.isFileRef) {
+      return `${p.name}: FilePath`;
+    }
     if (!p.required && p.defaultValue !== undefined) {
+      if (isPrimitive(p.defaultValue)) {
+        return `${p.name}=${p.defaultValue}`;
+      }
       return `${p.name}="${p.defaultValue}"`;
     }
     return p.name;
@@ -43,7 +53,15 @@ function buildSignature(name: string, params: HuParam[]): string {
   return `${name}(${parts.join(", ")})`;
 }
 
+function isPrimitive(value: string): boolean {
+  return /^-?\d+(\.\d+)?$/.test(value) || value === "true" || value === "false";
+}
+
 function formatOptional(p: HuParam): string {
-  if (p.defaultValue) return `\`${p.name}="${p.defaultValue}"\``;
+  if (p.isFileRef) return `\`${p.name}\` *(file path)*`;
+  if (p.defaultValue) {
+    const display = isPrimitive(p.defaultValue) ? p.defaultValue : `"${p.defaultValue}"`;
+    return `\`${p.name}=${display}\``;
+  }
   return `\`${p.name}\``;
 }

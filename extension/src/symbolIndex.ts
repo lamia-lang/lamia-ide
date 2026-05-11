@@ -17,6 +17,7 @@ export interface HuParam {
   name: string;
   required: boolean;
   defaultValue?: string;
+  isFileRef?: boolean;
 }
 
 export interface HuSymbol {
@@ -65,7 +66,22 @@ export function getHuSymbols(contextFile?: string): HuSymbol[] {
 }
 
 export function findHuByName(name: string, contextFile?: string): HuSymbol | undefined {
-  return getHuSymbols(contextFile).find((s) => s.name === name);
+  const matches = getHuSymbols(contextFile).filter((s) => s.name === name);
+  if (matches.length <= 1) return matches[0];
+  if (!contextFile) return matches[0];
+  const ctxDir = path.dirname(contextFile);
+  matches.sort((a, b) => {
+    const distA = _pathDistance(ctxDir, path.dirname(a.filePath));
+    const distB = _pathDistance(ctxDir, path.dirname(b.filePath));
+    return distA - distB;
+  });
+  return matches[0];
+}
+
+function _pathDistance(from: string, to: string): number {
+  const rel = path.relative(from, to);
+  if (!rel) return 0;
+  return rel.split(path.sep).length;
 }
 
 // ── Build ───────────────────────────────────────────────────────────────────
@@ -108,13 +124,12 @@ function parseHuFile(filePath: string, root: string): HuSymbol | null {
           : undefined,
       });
     }
-    // {@identifier} file refs are optional parameters (caller provides filepath)
     FILE_REF_RE.lastIndex = 0;
     while ((m = FILE_REF_RE.exec(content)) !== null) {
       const ref = m[1];
       if (!seen.has(ref)) {
         seen.add(ref);
-        paramDetails.push({ name: ref, required: false, defaultValue: "" });
+        paramDetails.push({ name: ref, required: true, isFileRef: true });
       }
     }
     return {

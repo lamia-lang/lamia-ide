@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { findHuByName, HuParam } from "./symbolIndex";
+import { findCallableByName, HuParam } from "./symbolIndex";
 
 export class LamiaSignatureHelpProvider implements vscode.SignatureHelpProvider {
   provideSignatureHelp(
@@ -17,17 +17,29 @@ export class LamiaSignatureHelpProvider implements vscode.SignatureHelpProvider 
     const fnName = fnMatch[1];
     const argsText = fnMatch[2];
 
-    const sym = findHuByName(fnName, document.uri.fsPath);
+    const sym = findCallableByName(fnName, document.uri.fsPath);
     if (!sym || sym.paramDetails.length === 0) return null;
 
-    const sig = new vscode.SignatureInformation(buildLabel(sym.name, sym.paramDetails));
+    const returnType = "returnType" in sym ? sym.returnType : undefined;
+    const sig = new vscode.SignatureInformation(buildLabel(sym.name, sym.paramDetails, returnType));
     sig.documentation = new vscode.MarkdownString(`*${sym.relativePath}*`);
 
     for (const p of sym.paramDetails) {
-      const paramLabel = p.required ? p.name : `${p.name}?`;
-      const doc = p.required
-        ? `Required parameter`
-        : `Optional${p.defaultValue ? ` (default: "${p.defaultValue}")` : ""}`;
+      let paramLabel: string;
+      let doc: string;
+      if (p.isFileRef) {
+        paramLabel = `${p.name}: FilePath`;
+        doc = "File path (required)";
+      } else if (!p.required && p.defaultValue) {
+        paramLabel = `${p.name}=${p.defaultValue}`;
+        doc = `Optional (default: ${p.defaultValue})`;
+      } else if (p.required) {
+        paramLabel = p.name;
+        doc = "Required parameter";
+      } else {
+        paramLabel = `${p.name}?`;
+        doc = "Optional";
+      }
       sig.parameters.push(new vscode.ParameterInformation(paramLabel, doc));
     }
 
@@ -41,9 +53,14 @@ export class LamiaSignatureHelpProvider implements vscode.SignatureHelpProvider 
   }
 }
 
-function buildLabel(name: string, params: HuParam[]): string {
-  const parts = params.map((p) => (p.required ? p.name : `${p.name}?`));
-  return `${name}(${parts.join(", ")})`;
+function buildLabel(name: string, params: HuParam[], returnType?: string): string {
+  const parts = params.map((p) => {
+    if (p.isFileRef) return `${p.name}: FilePath`;
+    if (!p.required && p.defaultValue) return `${p.name}=${p.defaultValue}`;
+    return p.required ? p.name : `${p.name}?`;
+  });
+  const suffix = returnType ? ` -> ${returnType}` : "";
+  return `${name}(${parts.join(", ")})${suffix}`;
 }
 
 function countCommas(text: string): number {

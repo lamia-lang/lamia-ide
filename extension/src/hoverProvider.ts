@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { findHuByName, HuParam } from "./symbolIndex";
+import { findCallableByName, CallableSymbol, HuParam } from "./symbolIndex";
 
 export class LamiaHoverProvider implements vscode.HoverProvider {
   provideHover(
@@ -11,10 +11,11 @@ export class LamiaHoverProvider implements vscode.HoverProvider {
     if (!wordRange) return null;
 
     const word = document.getText(wordRange);
-    const sym = findHuByName(word, document.uri.fsPath);
+    const sym = findCallableByName(word, document.uri.fsPath);
     if (!sym) return null;
 
-    const sig = buildSignature(sym.name, sym.paramDetails);
+    const returnType = "returnType" in sym ? sym.returnType : undefined;
+    const sig = buildSignature(sym.name, sym.paramDetails, returnType);
     const md = new vscode.MarkdownString();
     md.appendCodeblock(sig, "python");
 
@@ -36,8 +37,9 @@ export class LamiaHoverProvider implements vscode.HoverProvider {
   }
 }
 
-function buildSignature(name: string, params: HuParam[]): string {
-  if (params.length === 0) return `${name}()`;
+function buildSignature(name: string, params: HuParam[], returnType?: string): string {
+  const suffix = returnType ? ` -> ${returnType}` : "";
+  if (params.length === 0) return `${name}()${suffix}`;
   const parts = params.map((p) => {
     if (p.isFileRef) {
       return `${p.name}: FilePath`;
@@ -50,7 +52,7 @@ function buildSignature(name: string, params: HuParam[]): string {
     }
     return p.name;
   });
-  return `${name}(${parts.join(", ")})`;
+  return `${name}(${parts.join(", ")})${suffix}`;
 }
 
 function isPrimitive(value: string): boolean {

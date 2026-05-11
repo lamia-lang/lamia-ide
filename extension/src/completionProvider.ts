@@ -1,6 +1,6 @@
 import * as path from "path";
 import * as vscode from "vscode";
-import { getHuSymbols, findHuByName, HuSymbol, HuParam } from "./symbolIndex";
+import { getCallableSymbols, findCallableByName, CallableSymbol, HuParam } from "./symbolIndex";
 
 export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
@@ -29,7 +29,7 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
     if (!wordMatch) return undefined;
 
     const prefix = wordMatch[1].toLowerCase();
-    const symbols = getHuSymbols(ctxFile);
+    const symbols = getCallableSymbols(ctxFile);
     const ctxDir = path.dirname(ctxFile);
     symbols.sort((a, b) => {
       const distA = path.relative(ctxDir, path.dirname(a.filePath)).split(path.sep).length;
@@ -45,10 +45,14 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
         sym.name,
         vscode.CompletionItemKind.Function,
       );
-      item.detail = `${sym.relativePath}`;
+      const detail = sym.kind === "def" ? `${sym.relativePath}:${sym.line}` : sym.relativePath;
+      item.detail = detail;
       const reqParams = sym.paramDetails.filter((p) => p.required);
       const optParams = sym.paramDetails.filter((p) => !p.required);
       const docParts: string[] = [];
+      if ("returnType" in sym && sym.returnType) {
+        docParts.push(`Returns: ${sym.returnType}`);
+      }
       if (reqParams.length > 0) {
         docParts.push(`Required: ${reqParams.map((p) => formatParamDoc(p)).join(", ")}`);
       }
@@ -77,13 +81,13 @@ export class LamiaCompletionProvider implements vscode.CompletionItemProvider {
 
   // ── Parameter completion (inside parens) ──────────────────────────────
 
-  private _paramContext(textBefore: string, ctxFile: string): HuSymbol | null {
+  private _paramContext(textBefore: string, ctxFile: string): CallableSymbol | null {
     const m = textBefore.match(/([a-zA-Z_]\w*)\s*\([^)]*$/);
     if (!m) return null;
-    return findHuByName(m[1], ctxFile) ?? null;
+    return findCallableByName(m[1], ctxFile) ?? null;
   }
 
-  private _completeParams(sym: HuSymbol): vscode.CompletionItem[] | undefined {
+  private _completeParams(sym: CallableSymbol): vscode.CompletionItem[] | undefined {
     if (sym.paramDetails.length === 0) return undefined;
 
     const items: vscode.CompletionItem[] = [];

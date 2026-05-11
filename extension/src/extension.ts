@@ -105,7 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCompletionItemProvider(
       { language: "lamia" },
       completionProvider,
-      "(", ",",
+      ...Array.from("abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ(,"),
     ),
   );
 

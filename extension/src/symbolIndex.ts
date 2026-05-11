@@ -30,14 +30,18 @@ export interface HuSymbol {
 }
 
 export interface LmDefSymbol {
-  kind: "def" | "class";
+  kind: "def";
   name: string;
   params: string[];
+  paramDetails: HuParam[];
+  returnType?: string;
   filePath: string;
+  relativePath: string;
   line: number;
 }
 
 export type LamiaSymbol = HuSymbol | LmDefSymbol;
+export type CallableSymbol = HuSymbol | LmDefSymbol;
 
 // ── Index ───────────────────────────────────────────────────────────────────
 
@@ -65,10 +69,31 @@ export function getHuSymbols(contextFile?: string): HuSymbol[] {
   return getSymbols(contextFile).filter((s): s is HuSymbol => s.kind === "hu");
 }
 
+export function getLmDefSymbols(contextFile?: string): LmDefSymbol[] {
+  return getSymbols(contextFile).filter((s): s is LmDefSymbol => s.kind === "def");
+}
+
+export function getCallableSymbols(contextFile?: string): CallableSymbol[] {
+  return getSymbols(contextFile).filter(
+    (s): s is CallableSymbol => s.kind === "hu" || s.kind === "def",
+  );
+}
+
 export function findHuByName(name: string, contextFile?: string): HuSymbol | undefined {
   const matches = getHuSymbols(contextFile).filter((s) => s.name === name);
   if (matches.length <= 1) return matches[0];
   if (!contextFile) return matches[0];
+  return _closestByPath(matches, contextFile);
+}
+
+export function findCallableByName(name: string, contextFile?: string): CallableSymbol | undefined {
+  const matches = getCallableSymbols(contextFile).filter((s) => s.name === name);
+  if (matches.length <= 1) return matches[0];
+  if (!contextFile) return matches[0];
+  return _closestByPath(matches, contextFile);
+}
+
+function _closestByPath<T extends { filePath: string }>(matches: T[], contextFile: string): T {
   const ctxDir = path.dirname(contextFile);
   matches.sort((a, b) => {
     const distA = _pathDistance(ctxDir, path.dirname(a.filePath));
@@ -96,6 +121,9 @@ function buildIndex(root: string | null): LamiaSymbol[] {
     if (ext === ".hu") {
       const sym = parseHuFile(file, root);
       if (sym) symbols.push(sym);
+    } else if (ext === ".lm") {
+      const defs = parseLmFileDefs(file, root);
+      symbols.push(...defs);
     }
   }
 
@@ -143,6 +171,122 @@ function parseHuFile(filePath: string, root: string): HuSymbol | null {
   } catch {
     return null;
   }
+}
+
+// Regex: def funcname(params) -> ReturnType:
+const LM_DEF_RE = /^def\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*(.+?))?\s*:\s*$/;
+const LM_DEF_PARAM_RE = /(\w+)(?:\s*:\s*\w+)?\s*(?:=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|-?\d+(?:\.\d+)?|True|False|None))?/g;
+
+function parseLmFileDefs(filePath: string, root: string): LmDefSymbol[] {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    const lines = content.split("\n");
+    const symbols: LmDefSymbol[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const defMatch = LM_DEF_RE.exec(line);
+      if (!defMatch) continue;
+
+      const funcName = defMatch[1];
+      const rawParams = defMatch[2].trim();
+      const returnType = defMatch[3]?.trim();
+
+      // Collect the function body (string literal on next indented line(s))
+      let template = "";
+      for (let j = i + 1; j < lines.length && j <= i + 3; j++) {
+        const bodyLine = lines[j];
+        if (!bodyLine.match(/^\s/)) break;
+        const strMatch = bodyLine.match(/^\s+["'](.*)["']\s*$/);
+        if (strMatch) {
+          template = strMatch[1];
+          break;
+        }
+        const tripleMatch = bodyLine.match(/^\s+"""(.*)"""\s*$/);
+        if (tripleMatch) {
+          template = tripleMatch[1];
+          break;
+        }
+      }
+
+      const paramDetails = parseLmDefParams(rawParams, template);
+      symbols.push({
+        kind: "def",
+        name: funcName,
+        params: paramDetails.map((p) => p.name),
+        paramDetails,
+        returnType,
+        filePath,
+        relativePath: path.relative(root, filePath),
+        line: i + 1,
+      });
+    }
+
+    return symbols;
+  } catch {
+    return [];
+  }
+}
+
+function parseLmDefParams(rawParams: string, template: string): HuParam[] {
+  if (!rawParams) return extractTemplateOnlyParams(template);
+
+  const paramDetails: HuParam[] = [];
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  LM_DEF_PARAM_RE.lastIndex = 0;
+  while ((m = LM_DEF_PARAM_RE.exec(rawParams)) !== null) {
+    const pName = m[1];
+    if (seen.has(pName)) continue;
+    seen.add(pName);
+    const rawDefault = m[2];
+    if (rawDefault !== undefined) {
+      const cleaned = cleanDefault(rawDefault);
+      paramDetails.push({ name: pName, required: false, defaultValue: cleaned });
+    } else {
+      paramDetails.push({ name: pName, required: true });
+    }
+  }
+
+  return paramDetails;
+}
+
+function extractTemplateOnlyParams(template: string): HuParam[] {
+  if (!template) return [];
+  const params: HuParam[] = [];
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  PARAM_RE.lastIndex = 0;
+  while ((m = PARAM_RE.exec(template)) !== null) {
+    const pName = m[1];
+    if (pName.startsWith("@") || seen.has(pName)) continue;
+    seen.add(pName);
+    const defaultVal = m[2];
+    params.push({
+      name: pName,
+      required: defaultVal === undefined,
+      defaultValue: defaultVal !== undefined ? (defaultVal === "None" ? "" : defaultVal) : undefined,
+    });
+  }
+  FILE_REF_RE.lastIndex = 0;
+  while ((m = FILE_REF_RE.exec(template)) !== null) {
+    const ref = m[1];
+    if (!seen.has(ref)) {
+      seen.add(ref);
+      params.push({ name: ref, required: true, isFileRef: true });
+    }
+  }
+  return params;
+}
+
+function cleanDefault(raw: string): string {
+  if (raw === "None") return "";
+  if (raw === "True") return "true";
+  if (raw === "False") return "false";
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1);
+  }
+  return raw;
 }
 
 // ── Scanning helpers ────────────────────────────────────────────────────────

@@ -167,6 +167,8 @@ function checkInternalContextLeak(responseText: string): ReviewFlag | null {
   const markers = [
     "<turn_context_json>",
     "</turn_context_json>",
+    "[execution_summary]",
+    "[/execution_summary]",
     "\"toolCalls\"",
     "\"fileWrites\"",
     "\"responseTs\"",

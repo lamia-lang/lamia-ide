@@ -46,6 +46,17 @@ describe("completionReviewer gates", () => {
     expect(result.flags.some(f => f.type === "internal_context_leak")).toBe(true);
   });
 
+  it("flags internal_context_leak for execution summary markers", () => {
+    const result = reviewCompletion({
+      userMessage: "fix orchestrator.lm",
+      responseText: "Done.\n[execution_summary]\ntools_used: patch_file\n[/execution_summary]",
+      toolCalls: [],
+      fileWrites: [],
+    });
+    expect(result.verdict).toBe("flag");
+    expect(result.flags.some(f => f.type === "internal_context_leak")).toBe(true);
+  });
+
   it("flags py_instead_of_lamia when any .py file is created", () => {
     const result = reviewCompletion({
       userMessage: "create a pipeline that runs the analysis and buys stocks",

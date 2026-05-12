@@ -32,6 +32,7 @@ import {
   ToolCallInfo,
   ReviewResult,
 } from "./completionReviewer";
+import { sanitizeAssistantResponseText } from "./responseSanitizer";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -233,47 +234,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   }
 
   private _messageTextForHistory(message: ChatMessage): string {
-    if (message.role !== "assistant" || !message.turnContext) {
-      return message.text;
-    }
-
-    const hasToolCalls = Array.isArray(message.turnContext.toolCalls) && message.turnContext.toolCalls.length > 0;
-    const hasFileWrites = Array.isArray(message.turnContext.fileWrites) && message.turnContext.fileWrites.length > 0;
-    if (!hasToolCalls && !hasFileWrites) {
-      return message.text;
-    }
-    const tools = (message.turnContext.toolCalls || [])
-      .map(t => t.tool)
-      .filter(Boolean);
-    const uniqueTools = [...new Set(tools)];
-    const files = (message.turnContext.fileWrites || [])
-      .map(f => `${f.action}:${f.path}`)
-      .slice(0, 10);
-    const parts: string[] = [];
-    if (uniqueTools.length > 0) {
-      parts.push(`tools_used: ${uniqueTools.join(", ")}`);
-    }
-    if (files.length > 0) {
-      parts.push(`files_changed: ${files.join(" | ")}`);
-    }
-    if (parts.length === 0) {
-      return message.text;
-    }
-    return `${message.text}\n\n[execution_summary]\n${parts.join("\n")}\n[/execution_summary]`;
+    return message.text;
   }
 
   private _sanitizeAssistantResponse(text: string): string {
-    let safe = text.replace(/<turn_context_json>[\s\S]*?<\/turn_context_json>/gi, "").trim();
-
-    const cutMarkers = ["\"toolCalls\"", "\"fileWrites\"", "\"responseTs\"", "<turn_context_json>"];
-    for (const marker of cutMarkers) {
-      const idx = safe.indexOf(marker);
-      if (idx >= 0) {
-        safe = safe.slice(0, idx).trim();
-      }
-    }
-
-    return safe;
+    return sanitizeAssistantResponseText(text);
   }
 
   // ── Completion reviewer ──────────────────────────────────────────────────

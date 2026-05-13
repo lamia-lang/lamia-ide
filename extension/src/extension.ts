@@ -19,6 +19,7 @@ import { resolveLamiaCli } from "./lamiaDebugRuntime";
 import { collectSystemInfo } from "./systemInfo";
 import { LamiaExecutableDecorationProvider } from "./executableDecorationProvider";
 import { FileReferenceCompletionProvider } from "./fileReferenceCompletionProvider";
+import { LamiaDiagnosticsProvider } from "./diagnosticsProvider";
 
 let _chatProvider: LamiaChatProvider | undefined;
 let _runningExecution: vscode.TaskExecution | undefined;
@@ -178,6 +179,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  const diagProvider = new LamiaDiagnosticsProvider();
+  context.subscriptions.push(diagProvider);
 
   const chatProvider = new LamiaChatProvider(context);
   _chatProvider = chatProvider;

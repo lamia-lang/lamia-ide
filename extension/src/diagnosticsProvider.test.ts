@@ -8,26 +8,6 @@ vi.mock("./lamiaDebugRuntime", () => ({
   resolveLamiaCli: () => "/usr/bin/lamia",
 }));
 
-vi.mock("./symbolIndex", () => ({
-  findCallableByName: (name: string) => {
-    if (name === "summarize") {
-      return {
-        kind: "hu",
-        name: "summarize",
-        params: ["aspect", "max_words", "article_path"],
-        paramDetails: [
-          { name: "aspect", required: true },
-          { name: "max_words", required: false, defaultValue: "200" },
-          { name: "article_path", required: true, isFileRef: true },
-        ],
-        filePath: "/tmp/summarize.hu",
-        relativePath: "summarize.hu",
-      };
-    }
-    return undefined;
-  },
-}));
-
 const onDidChangeHandlers: Function[] = [];
 const onDidOpenHandlers: Function[] = [];
 const onDidSaveHandlers: Function[] = [];
@@ -145,6 +125,12 @@ describe("LamiaDiagnosticsProvider", () => {
     expect(mockExecFile).not.toHaveBeenCalled();
   });
 
+  it("ignores .hu files (templates have no syntax to check)", () => {
+    const doc = { uri: { fsPath: "/tmp/test.hu" }, fileName: "/tmp/test.hu" };
+    fireOpen(doc);
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
   it("debounces on-change events", () => {
     const doc = { uri: { fsPath: "/tmp/edit.lm" }, fileName: "/tmp/edit.lm" };
     fireChange({ document: doc });
@@ -193,6 +179,73 @@ describe("LamiaDiagnosticsProvider", () => {
     expect(diagnostics[0].source).toBe("lamia");
   });
 
+  it("displays semantic errors from inspect (missing args)", () => {
+    const doc = { uri: { fsPath: "/tmp/sem.lm" }, fileName: "/tmp/sem.lm" };
+    mockTextDocuments = [
+      {
+        uri: { fsPath: "/tmp/sem.lm" },
+        lineAt: () => ({ text: 'summarize(aspect="key")' }),
+      },
+    ];
+    fireOpen(doc);
+
+    const callback = mockExecFile.mock.calls[0][3] as Function;
+    callback(
+      null,
+      JSON.stringify({
+        executable: true,
+        steps: [1],
+        diagnostics: [
+          {
+            severity: "error",
+            message: "summarize() missing required argument: article_path",
+            line: 1,
+            col: 0,
+            source: "lamia-semantic",
+          },
+        ],
+      }),
+    );
+
+    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].message).toContain("missing required argument");
+    expect(diagnostics[0].severity).toBe(0);
+  });
+
+  it("displays unresolved function errors from inspect", () => {
+    const doc = { uri: { fsPath: "/tmp/unr.lm" }, fileName: "/tmp/unr.lm" };
+    mockTextDocuments = [
+      {
+        uri: { fsPath: "/tmp/unr.lm" },
+        lineAt: () => ({ text: "nonexistent()" }),
+      },
+    ];
+    fireOpen(doc);
+
+    const callback = mockExecFile.mock.calls[0][3] as Function;
+    callback(
+      null,
+      JSON.stringify({
+        executable: true,
+        steps: [1],
+        diagnostics: [
+          {
+            severity: "error",
+            message: "Unresolved function 'nonexistent' — no matching .hu or .lm function found",
+            line: 1,
+            col: 0,
+            source: "lamia-semantic",
+          },
+        ],
+      }),
+    );
+
+    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].message).toContain("Unresolved function");
+  });
+
   it("clears diagnostics when file has no errors", () => {
     const doc = { uri: { fsPath: "/tmp/ok.lm" }, fileName: "/tmp/ok.lm" };
     fireOpen(doc);
@@ -212,12 +265,6 @@ describe("LamiaDiagnosticsProvider", () => {
     expect(mockDiagnosticCollection.delete).toHaveBeenCalledWith(doc.uri);
   });
 
-  it("ignores .hu files (templates have no syntax to check)", () => {
-    const doc = { uri: { fsPath: "/tmp/test.hu" }, fileName: "/tmp/test.hu" };
-    fireOpen(doc);
-    expect(mockExecFile).not.toHaveBeenCalled();
-  });
-
   it("maps warning severity correctly", () => {
     const doc = { uri: { fsPath: "/tmp/w.lm" }, fileName: "/tmp/w.lm" };
     mockTextDocuments = [
@@ -235,7 +282,7 @@ describe("LamiaDiagnosticsProvider", () => {
         executable: false,
         steps: [],
         diagnostics: [
-          { severity: "warning", message: "unused var", line: 1, col: 0, source: "lamia" },
+          { severity: "warning", message: "template mismatch", line: 1, col: 0, source: "lamia-semantic" },
         ],
       }),
     );
@@ -244,25 +291,14 @@ describe("LamiaDiagnosticsProvider", () => {
     expect(diagnostics[0].severity).toBe(1);
   });
 
-  it("handles inspect error gracefully by still running semantic checks", () => {
-    const lines = ["print('hello')"];
+  it("handles inspect error gracefully by clearing diagnostics", () => {
     const doc = { uri: { fsPath: "/tmp/crash.lm" }, fileName: "/tmp/crash.lm" };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/crash.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
     fireOpen(doc);
 
     const callback = mockExecFile.mock.calls[0][3] as Function;
     callback(new Error("lamia not found"), "");
 
-    expect(mockDiagnosticCollection.set).toHaveBeenCalledWith(
-      { fsPath: "/tmp/crash.lm" },
-      [],
-    );
+    expect(mockDiagnosticCollection.delete).toHaveBeenCalledWith({ fsPath: "/tmp/crash.lm" });
   });
 
   it("underlines the whole error line when col is 0", () => {
@@ -291,214 +327,5 @@ describe("LamiaDiagnosticsProvider", () => {
     const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
     expect(diagnostics[0].range.startChar).toBe(0);
     expect(diagnostics[0].range.endChar).toBe(19);
-  });
-
-  it("reports missing required arguments for known function calls", () => {
-    const lines = [
-      'result = summarize(aspect="key findings", max_words=200)',
-      "print(result)",
-    ];
-    const doc = {
-      uri: { fsPath: "/tmp/caller.lm" },
-      fileName: "/tmp/caller.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/caller.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: true, steps: [1, 2] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    const missing = diagnostics.filter((d: any) =>
-      d.message.includes("missing required argument"),
-    );
-    expect(missing).toHaveLength(1);
-    expect(missing[0].message).toContain("article_path");
-    expect(missing[0].severity).toBe(0);
-    expect(missing[0].source).toBe("lamia");
-  });
-
-  it("does not report error when all required args are provided", () => {
-    const lines = [
-      'summarize(aspect="x", article_path="report.txt", max_words=100)',
-    ];
-    const doc = {
-      uri: { fsPath: "/tmp/ok_call.lm" },
-      fileName: "/tmp/ok_call.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/ok_call.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: true, steps: [1] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    expect(diagnostics).toHaveLength(0);
-  });
-
-  it("does not flag builtins like print", () => {
-    const lines = ["print(result)"];
-    const doc = {
-      uri: { fsPath: "/tmp/builtin.lm" },
-      fileName: "/tmp/builtin.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/builtin.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: true, steps: [1] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    expect(diagnostics).toHaveLength(0);
-  });
-
-  it("flags unresolved function calls", () => {
-    const lines = ['summarize23(aspect="key findings")'];
-    const doc = {
-      uri: { fsPath: "/tmp/unresolved.lm" },
-      fileName: "/tmp/unresolved.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/unresolved.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: true, steps: [1] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0].message).toContain("Unresolved function");
-    expect(diagnostics[0].message).toContain("summarize23");
-  });
-
-  it("does not flag method calls with dot prefix", () => {
-    const lines = ['web.navigate("https://example.com")'];
-    const doc = {
-      uri: { fsPath: "/tmp/dotcall.lm" },
-      fileName: "/tmp/dotcall.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/dotcall.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: true, steps: [1] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    expect(diagnostics).toHaveLength(0);
-  });
-
-  it("does not flag locally defined functions", () => {
-    const lines = [
-      "def my_helper():",
-      '    "do something"',
-      "",
-      "my_helper()",
-    ];
-    const doc = {
-      uri: { fsPath: "/tmp/localdef.lm" },
-      fileName: "/tmp/localdef.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/localdef.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: true, steps: [4] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    expect(diagnostics).toHaveLength(0);
-  });
-
-  it("warns when inline def template references params not in signature", () => {
-    const lines = [
-      "def summarize2(aspect, max_word) -> HTML:",
-      '    "Summarize: {@article_path}. Focus on {aspect}, under {max_words:200} words."',
-    ];
-    const doc = {
-      uri: { fsPath: "/tmp/mismatch.lm" },
-      fileName: "/tmp/mismatch.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/mismatch.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: false, steps: [] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    const mismatchDiags = diagnostics.filter((d: any) =>
-      d.message.includes("not in the function signature"),
-    );
-    expect(mismatchDiags).toHaveLength(1);
-    expect(mismatchDiags[0].message).toContain("article_path");
-    expect(mismatchDiags[0].message).toContain("max_words");
-    expect(mismatchDiags[0].severity).toBe(1);
-  });
-
-  it("no warning when all template refs are in signature", () => {
-    const lines = [
-      "def greet(name, greeting) -> HTML:",
-      '    "Say {greeting} to {name}"',
-    ];
-    const doc = {
-      uri: { fsPath: "/tmp/ok_def.lm" },
-      fileName: "/tmp/ok_def.lm",
-    };
-    mockTextDocuments = [
-      {
-        uri: { fsPath: "/tmp/ok_def.lm" },
-        lineCount: lines.length,
-        lineAt: (i: number) => ({ text: lines[i] }),
-      },
-    ];
-    fireOpen(doc);
-
-    const callback = mockExecFile.mock.calls[0][3] as Function;
-    callback(null, JSON.stringify({ executable: false, steps: [] }));
-
-    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    const mismatchDiags = diagnostics.filter((d: any) =>
-      d.message.includes("not in the function signature"),
-    );
-    expect(mismatchDiags).toHaveLength(0);
   });
 });

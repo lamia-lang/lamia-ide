@@ -63,7 +63,11 @@ class LamiaRunPseudoTerminal implements vscode.Pseudoterminal {
     });
 
     this._proc.on("close", (code) => {
-      this._closeEmitter.fire(code ?? 0);
+      const exitCode = code ?? 0;
+      if (exitCode === 0) { // For symmetry with the vscode output for non zero exit codes
+        this._writeEmitter.fire(`\r\n\x1b[0m *  The terminal process terminated with exit code: ${exitCode}.\r\n`);
+      }
+      this._closeEmitter.fire(exitCode);
       this._proc = null;
     });
   }

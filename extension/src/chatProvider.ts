@@ -127,6 +127,19 @@ function buildSnippetPrefix(snippets: CopiedSnippet[] | undefined): string {
     .join("\n\n");
 }
 
+export function buildFileContextPrefix(filePaths: string[] | undefined): string {
+  if (!filePaths || filePaths.length === 0) return "";
+  const path = require("path");
+  return filePaths
+    .map((fp) => {
+      const dir = path.dirname(fp);
+      return `<attached_file path="${fp}" directory="${dir}">` +
+        `Relative paths in this file resolve from ${dir}` +
+        `</attached_file>`;
+    })
+    .join("\n");
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getNonce(): string {
@@ -514,7 +527,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
           const files = message.files && message.files.length > 0 ? message.files : undefined;
           const snippetPrefix = buildSnippetPrefix(message.snippets);
-          const llmMessage = snippetPrefix ? `${snippetPrefix}\n\n${message.message}` : message.message;
+          const fileContextPrefix = buildFileContextPrefix(files);
+          let llmMessage = message.message;
+          if (fileContextPrefix) llmMessage = `${fileContextPrefix}\n\n${llmMessage}`;
+          if (snippetPrefix) llmMessage = `${snippetPrefix}\n\n${llmMessage}`;
 
           const history = this._buildHistoryForLLM();
 
@@ -1145,13 +1161,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       padding: 4px 10px;
     }
     .tool-step {
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: baseline; gap: 6px;
       font-size: 12px; opacity: 0.7; line-height: 1.4;
       min-width: 0;
     }
     .tool-step > span:last-child {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      min-width: 0;
+      min-width: 0; flex: 1;
+      white-space: normal;
+      word-break: break-word;
     }
     .tool-step .ts-spinner {
       width: 12px; height: 12px; flex-shrink: 0;

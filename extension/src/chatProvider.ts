@@ -1162,12 +1162,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
     .tool-step {
       display: flex; align-items: baseline; gap: 6px;
+      flex-wrap: wrap;
       font-size: 12px; opacity: 0.7; line-height: 1.4;
       min-width: 0;
     }
-    .tool-step > span:last-child {
+    .tool-step .ts-label {
       min-width: 0; flex: 1;
       white-space: normal;
+      overflow-wrap: anywhere;
       word-break: break-word;
     }
     .tool-step .ts-spinner {
@@ -1194,11 +1196,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       margin-left: 18px;
       font-size: 11px; opacity: 0.7;
       color: var(--vscode-charts-red, #e44);
-      white-space: pre-wrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
       word-break: break-word;
-      overflow: visible;
-      text-overflow: clip;
-      max-width: none;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1668,7 +1668,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
       const step = document.createElement("div");
       step.className = "tool-step";
-      step.innerHTML = '<span class="ts-spinner"></span><span>' + escapeHtml(label) + '</span>';
+      step.innerHTML = '<span class="ts-spinner"></span><span class="ts-label">' + escapeHtml(label) + '</span>';
       toolProgressEl.appendChild(step);
       container.scrollTop = container.scrollHeight;
     }
@@ -1687,7 +1687,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         if (step) {
           var errEl = document.createElement("span");
           errEl.className = "ts-error-detail";
-          errEl.textContent = error;
+          errEl.textContent = "Error: " + error;
           step.appendChild(errEl);
         }
       }
@@ -1715,11 +1715,11 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         var ok = t.success !== false;
         var cls = ok ? "ts-check" : "ts-fail";
         var sym = ok ? "\\u2713" : "\\u2717";
-        step.innerHTML = '<span class="' + cls + '">' + sym + '</span><span>' + escapeHtml(label) + '</span>';
+        step.innerHTML = '<span class="' + cls + '">' + sym + '</span><span class="ts-label">' + escapeHtml(label) + '</span>';
         if (!ok && t.error) {
           var errEl = document.createElement("span");
           errEl.className = "ts-error-detail";
-          errEl.textContent = t.error;
+          errEl.textContent = "Error: " + t.error;
           step.appendChild(errEl);
         }
         wrapper.appendChild(step);

@@ -140,6 +140,30 @@ export function buildFileContextPrefix(filePaths: string[] | undefined): string 
     .join("\n");
 }
 
+export function deduplicateFileWrites(files: FileWrite[]): FileWrite[] {
+  const seen = new Map<string, FileWrite>();
+  const order: string[] = [];
+
+  for (const f of files) {
+    if (seen.has(f.path)) {
+      const prev = seen.get(f.path)!;
+      prev.content = f.content;
+
+      // Keep "create" sticky across same-turn follow-up writes.
+      // If a file is first created and then written again, users still expect
+      // the final badge to say "Created", not "Modified".
+      if (!(prev.action === "create" && f.action === "modify")) {
+        prev.action = f.action;
+      }
+    } else {
+      seen.set(f.path, { ...f });
+      order.push(f.path);
+    }
+  }
+
+  return order.map((p) => seen.get(p)!);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getNonce(): string {
@@ -560,7 +584,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           });
 
           if (response.type === "response" && response.text) {
-            const dedupedFiles = response.files ? this._deduplicateFileWrites(response.files) : undefined;
+            const dedupedFiles = response.files ? deduplicateFileWrites(response.files) : undefined;
             const accepted = await this._reviewAndMaybeRetry(
               message.message,
               response.text,
@@ -850,26 +874,6 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     this._view?.webview.postMessage(msg);
   }
 
-  /**
-   * Deduplicate file writes by path: when write_file + patch_file hit the
-   * same file (e.g. lint-fix loop), keep the first entry's original and the
-   * last entry's content/action so the diff shows the full before-after.
-   */
-  private _deduplicateFileWrites(files: FileWrite[]): FileWrite[] {
-    const seen = new Map<string, FileWrite>();
-    const order: string[] = [];
-    for (const f of files) {
-      if (seen.has(f.path)) {
-        const prev = seen.get(f.path)!;
-        prev.content = f.content;
-        prev.action = f.action;
-      } else {
-        seen.set(f.path, { ...f });
-        order.push(f.path);
-      }
-    }
-    return order.map(p => seen.get(p)!);
-  }
 
   // ── Webview HTML ───────────────────────────────────────────────────────────
 
@@ -1595,19 +1599,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         }
         items.push({ kind: "response", data: msg, ts: tc.responseTs || msg.ts || 0 });
         if (Array.isArray(tc.fileWrites)) {
-          var seenPaths = {};
-          var dedupedWrites = [];
           tc.fileWrites.forEach(function(f) {
-            if (seenPaths[f.path] !== undefined) {
-              var prev = dedupedWrites[seenPaths[f.path]];
-              prev.content = f.content;
-              prev.action = f.action;
-            } else {
-              seenPaths[f.path] = dedupedWrites.length;
-              dedupedWrites.push({ path: f.path, action: f.action, content: f.content, original: f.original, ts: f.ts });
-            }
-          });
-          dedupedWrites.forEach(function(f) {
             items.push({ kind: "file", data: f, ts: f.ts || 0 });
           });
         }

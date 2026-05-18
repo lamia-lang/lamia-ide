@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFileContextPrefix } from "./chatProvider";
+import { buildFileContextPrefix, deduplicateFileWrites } from "./chatProvider";
 
 describe("buildFileContextPrefix", () => {
   it("returns empty string for undefined", () => {
@@ -33,5 +33,30 @@ describe("buildFileContextPrefix", () => {
     const result = buildFileContextPrefix([longPath]);
     expect(result).toContain(longPath);
     expect(result).not.toContain("...");
+  });
+});
+
+describe("deduplicateFileWrites", () => {
+  it("keeps create action when same file is re-written", () => {
+    const deduped = deduplicateFileWrites([
+      { path: "/tmp/a.txt", action: "create", content: "first" },
+      { path: "/tmp/a.txt", action: "modify", content: "second" },
+    ]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].path).toBe("/tmp/a.txt");
+    expect(deduped[0].action).toBe("create");
+    expect(deduped[0].content).toBe("second");
+  });
+
+  it("keeps latest action for normal modify chains", () => {
+    const deduped = deduplicateFileWrites([
+      { path: "/tmp/a.txt", action: "modify", content: "1" },
+      { path: "/tmp/a.txt", action: "modify", content: "2" },
+    ]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].action).toBe("modify");
+    expect(deduped[0].content).toBe("2");
   });
 });

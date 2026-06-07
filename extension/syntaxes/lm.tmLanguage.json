@@ -8,11 +8,14 @@
     { "include": "#lamia-arrow-general" },
     { "include": "#docstring" },
     { "include": "#comment" },
+    { "include": "#fstring-triple-double" },
+    { "include": "#fstring-triple-single" },
+    { "include": "#fstring-double" },
+    { "include": "#fstring-single" },
     { "include": "#string-triple-double" },
     { "include": "#string-triple-single" },
     { "include": "#string-double" },
     { "include": "#string-single" },
-    { "include": "#fstring" },
     { "include": "#keywords" },
     { "include": "#builtins" },
     { "include": "#constants" },
@@ -103,25 +106,107 @@
       "match": "#.*$",
       "name": "comment.line.number-sign.python"
     },
+    "fstring-triple-double": {
+      "begin": "([fF])(\"\"\")",
+      "end": "(\"\"\")",
+      "beginCaptures": {
+        "1": { "name": "storage.type.string.python" },
+        "2": { "name": "punctuation.definition.string.begin.python" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.string.end.python" }
+      },
+      "name": "string.quoted.triple.double.python",
+      "patterns": [
+        { "include": "#fstring-interpolation" },
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+    "fstring-triple-single": {
+      "begin": "([fF])(''')",
+      "end": "(''')",
+      "beginCaptures": {
+        "1": { "name": "storage.type.string.python" },
+        "2": { "name": "punctuation.definition.string.begin.python" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.string.end.python" }
+      },
+      "name": "string.quoted.triple.single.python",
+      "patterns": [
+        { "include": "#fstring-interpolation" },
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+    "fstring-double": {
+      "begin": "([fF])(\")",
+      "end": "(\")",
+      "beginCaptures": {
+        "1": { "name": "storage.type.string.python" },
+        "2": { "name": "punctuation.definition.string.begin.python" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.string.end.python" }
+      },
+      "name": "string.quoted.double.python",
+      "patterns": [
+        { "include": "#fstring-interpolation" },
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+    "fstring-single": {
+      "begin": "([fF])(')",
+      "end": "(')",
+      "beginCaptures": {
+        "1": { "name": "storage.type.string.python" },
+        "2": { "name": "punctuation.definition.string.begin.python" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.string.end.python" }
+      },
+      "name": "string.quoted.single.python",
+      "patterns": [
+        { "include": "#fstring-interpolation" },
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+    "fstring-interpolation": {
+      "begin": "(\\{)(?!\\{)",
+      "end": "(\\})",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.interpolation.begin.python" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.interpolation.end.python" }
+      },
+      "name": "meta.interpolation.python",
+      "patterns": [
+        { "include": "#keywords" },
+        { "include": "#builtins" },
+        { "include": "#constants" },
+        { "include": "#number" },
+        { "include": "#operator" },
+        { "include": "#string-double" },
+        { "include": "#string-single" },
+        { "include": "#function-call" }
+      ]
+    },
     "string-triple-double": {
       "begin": "\"\"\"",
       "end": "\"\"\"",
-      "name": "string.quoted.triple.double.python",
-      "patterns": [{ "include": "#string-interpolation" }]
+      "name": "string.quoted.triple.double.python"
     },
     "string-triple-single": {
       "begin": "'''",
       "end": "'''",
-      "name": "string.quoted.triple.single.python",
-      "patterns": [{ "include": "#string-interpolation" }]
+      "name": "string.quoted.triple.single.python"
     },
     "string-double": {
       "begin": "\"",
       "end": "\"",
       "name": "string.quoted.double.python",
       "patterns": [
-        { "match": "\\\\.", "name": "constant.character.escape.python" },
-        { "include": "#string-interpolation" }
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
       ]
     },
     "string-single": {
@@ -131,19 +216,6 @@
       "patterns": [
         { "match": "\\\\.", "name": "constant.character.escape.python" }
       ]
-    },
-    "fstring": {
-      "begin": "[fF]\"",
-      "end": "\"",
-      "name": "string.quoted.double.python",
-      "patterns": [
-        { "include": "#string-interpolation" },
-        { "match": "\\\\.", "name": "constant.character.escape.python" }
-      ]
-    },
-    "string-interpolation": {
-      "match": "\\{[^}]+\\}",
-      "name": "meta.interpolation.python"
     },
     "keywords": {
       "match": "\\b(import|from|as|def|class|return|if|elif|else|for|while|try|except|finally|with|raise|pass|break|continue|yield|async|await|and|or|not|in|is|lambda|assert|del|global|nonlocal)\\b",

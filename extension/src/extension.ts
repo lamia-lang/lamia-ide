@@ -20,6 +20,7 @@ import { collectSystemInfo } from "./systemInfo";
 import { LamiaExecutableDecorationProvider } from "./executableDecorationProvider";
 import { FileReferenceCompletionProvider } from "./fileReferenceCompletionProvider";
 import { LamiaDiagnosticsProvider } from "./diagnosticsProvider";
+import { checkForUpdate } from "./updateChecker";
 
 let _chatProvider: LamiaChatProvider | undefined;
 let _runningExecution: vscode.TaskExecution | undefined;
@@ -90,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
   writeIdePath();
 
   if (isLamiaReady()) {
-    // Already installed from a previous launch — nothing to do
+    checkForUpdate(context).catch(() => {});
   } else if (isPythonAvailable()) {
     ensureLamia().catch(() => {});
   } else {

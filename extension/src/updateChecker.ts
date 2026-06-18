@@ -198,10 +198,10 @@ export async function checkForUpdate(context: vscode.ExtensionContext): Promise<
   const currentApi = await getLiveIdeApi();
 
   // Install in isolated staging venv, verify compatibility, then swap
-  let newApi: { major: number; minor: number } | null = null;
+  let newApi: { major: number; minor: number } | null;
 
   try {
-    await vscode.window.withProgress(
+    newApi = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: `Downloading Lamia ${latest}…`,
@@ -210,7 +210,7 @@ export async function checkForUpdate(context: vscode.ExtensionContext): Promise<
       async () => {
         await createStagingVenv();
         await installInStaging(latest);
-        newApi = await getStagingIdeApi();
+        return getStagingIdeApi();
       },
     );
   } catch {

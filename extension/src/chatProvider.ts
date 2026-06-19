@@ -344,11 +344,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     this._reviewRound++;
     if (this._reviewRound >= MAX_REVIEW_ROUNDS) {
       this._reviewRound = 0;
+      const failedDetails = review.flags.map(f => `• ${f.detail}`).join("\n");
       this._post({
         type: "error",
-        text: "The response was blocked by safety review because it did not match executed evidence.",
+        text: `Review detected unresolved issues:\n${failedDetails}`,
+        errorType: "warning",
       });
-      return false;
+      return true;
     }
 
     const feedback = buildEscalatingFeedback(
@@ -1017,6 +1019,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       background: rgba(200,0,0,0.18);
       border-color: var(--vscode-inputValidation-errorBorder, #f00);
     }
+    .message.error.error-warning .message-bubble,
     .message.error.error-rate_limit .message-bubble,
     .message.error.error-timeout .message-bubble,
     .message.error.error-network .message-bubble {

@@ -26,8 +26,6 @@ export interface LamiaResponse {
   files?: FileWrite[];
 }
 
-type ToolRequestHandler = (tool: string, args: Record<string, unknown>) => Promise<{ result: string; success: boolean }>;
-
 type PendingRequest = {
   resolve: (value: LamiaResponse) => void;
   reject: (err: Error) => void;
@@ -46,7 +44,6 @@ export class LamiaProcess {
   private _readyPromise: Promise<void>;
   private _disposed = false;
   private _cwd: string;
-  public toolRequestHandler: ToolRequestHandler | null = null;
 
   constructor(
     private _cliPath: string,
@@ -124,12 +121,6 @@ export class LamiaProcess {
         continue;
       }
 
-      if ((msg as any).type === "tool_request") {
-        const t = msg as any;
-        this._handleToolRequest(t.tool ?? "", t.args ?? {});
-        continue;
-      }
-
       if ((msg as any).type === "tool_use") {
         try {
           const head = this._queue[0];
@@ -178,23 +169,6 @@ export class LamiaProcess {
     }
   }
 
-  private _handleToolRequest(tool: string, args: Record<string, unknown>): void {
-    const respond = (result: string, success: boolean) => {
-      if (!this._proc || !this._proc.stdin) return;
-      const response = JSON.stringify({ type: "tool_response", tool, result, success });
-      this._proc.stdin.write(response + "\n", "utf-8");
-    };
-
-    if (!this.toolRequestHandler) {
-      respond(`Error: no handler registered for external tool "${tool}"`, false);
-      return;
-    }
-
-    this.toolRequestHandler(tool, args).then(
-      (r) => respond(r.result, r.success),
-      (err) => respond(`Error: ${err.message}`, false),
-    );
-  }
 
   async send(
     text: string,

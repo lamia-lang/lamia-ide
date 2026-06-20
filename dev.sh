@@ -107,6 +107,7 @@ LAMIA_EXT_DIR="${USER_EXT_BASE}/${EXT_ID}"
 rm -rf "${USER_EXT_BASE}/${EXT_PUBLISHER}.${EXT_NAME}-"* 2>/dev/null || true
 mkdir -p "${LAMIA_EXT_DIR}"
 cp -R extension/out/                  "${LAMIA_EXT_DIR}/out/"
+cp -R extension/media                 "${LAMIA_EXT_DIR}/media"
 cp    extension/package.json          "${LAMIA_EXT_DIR}/package.json"
 cp -R extension/syntaxes              "${LAMIA_EXT_DIR}/syntaxes"
 cp -R extension/icons                 "${LAMIA_EXT_DIR}/icons"

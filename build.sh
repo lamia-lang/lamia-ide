@@ -277,6 +277,7 @@ LAMIA_EXT_DIR="${EXTENSIONS_DIR}/lamia-ide"
 mkdir -p "${LAMIA_EXT_DIR}"
 # Copy only the runtime files — skip src, node_modules, tsconfig
 cp -R extension/out                    "${LAMIA_EXT_DIR}/out"
+cp -R extension/media                  "${LAMIA_EXT_DIR}/media"
 cp    extension/package.json           "${LAMIA_EXT_DIR}/package.json"
 cp    extension/package-lock.json      "${LAMIA_EXT_DIR}/package-lock.json" 2>/dev/null || true
 cp -R extension/syntaxes               "${LAMIA_EXT_DIR}/syntaxes"

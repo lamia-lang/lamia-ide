@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Script } from "vm";
-import { buildFileContextPrefix, deduplicateFileWrites, LamiaChatProvider } from "./chatProvider";
+import * as fs from "fs";
+import * as path from "path";
+import { buildFileContextPrefix, deduplicateFileWrites } from "./chatProvider";
 
 describe("buildFileContextPrefix", () => {
   it("returns empty string for undefined", () => {
@@ -63,9 +65,7 @@ describe("deduplicateFileWrites", () => {
 });
 
 function extractWebviewScript(): string {
-  const html = (LamiaChatProvider.prototype as any)._getHtmlForWebview.call({});
-  const match = html.match(/<script nonce="[^"]*">([\s\S]*?)<\/script>/);
-  return match ? match[1] : "";
+  return fs.readFileSync(path.join(__dirname, "..", "media", "webview.js"), "utf8");
 }
 
 describe("chat webview script", () => {
@@ -77,7 +77,7 @@ describe("chat webview script", () => {
 
   it("openSetup sets settings-mode and removes history-mode", () => {
     const script = extractWebviewScript();
-    const openSetupMatch = script.match(/function openSetup\(\)\s*\{([\s\S]*?)\n    \}/);
+    const openSetupMatch = script.match(/function openSetup\(\)\s*\{([\s\S]*?)\n\}/);
     expect(openSetupMatch).toBeTruthy();
     const body = openSetupMatch![1];
     expect(body).toContain('classList.add("settings-mode")');
@@ -86,7 +86,7 @@ describe("chat webview script", () => {
 
   it("openHistory sets history-mode and closes settings", () => {
     const script = extractWebviewScript();
-    const openHistoryMatch = script.match(/function openHistory\(\)\s*\{([\s\S]*?)\n    \}/);
+    const openHistoryMatch = script.match(/function openHistory\(\)\s*\{([\s\S]*?)\n\}/);
     expect(openHistoryMatch).toBeTruthy();
     const body = openHistoryMatch![1];
     expect(body).toContain("closeSetup()");
@@ -95,14 +95,14 @@ describe("chat webview script", () => {
 
   it("closeSetup removes settings-mode", () => {
     const script = extractWebviewScript();
-    const match = script.match(/function closeSetup\(\)\s*\{([\s\S]*?)\n    \}/);
+    const match = script.match(/function closeSetup\(\)\s*\{([\s\S]*?)\n\}/);
     expect(match).toBeTruthy();
     expect(match![1]).toContain('classList.remove("settings-mode")');
   });
 
   it("closeHistory removes history-mode", () => {
     const script = extractWebviewScript();
-    const match = script.match(/function closeHistory\(\)\s*\{([\s\S]*?)\n    \}/);
+    const match = script.match(/function closeHistory\(\)\s*\{([\s\S]*?)\n\}/);
     expect(match).toBeTruthy();
     expect(match![1]).toContain('classList.remove("history-mode")');
   });

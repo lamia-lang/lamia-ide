@@ -196,15 +196,6 @@ export function activate(context: vscode.ExtensionContext) {
     console.error("MCP initialization failed:", err);
   });
   context.subscriptions.push({ dispose: () => mcpManager.dispose() });
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration("lamia.mcp.servers")) {
-        mcpManager.reload().catch(err => {
-          console.error("MCP reload failed:", err);
-        });
-      }
-    })
-  );
 
   const chatProvider = new LamiaChatProvider(context, mcpManager);
   _chatProvider = chatProvider;

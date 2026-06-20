@@ -59,10 +59,12 @@ class StdioTransport implements McpTransport {
   }
 
   async request(method: string, params?: Record<string, unknown>, timeoutMs = 30_000): Promise<unknown> {
+    if (this._destroyed) {
+      throw new Error("Transport destroyed");
+    }
     const id = this._nextId++;
     const msg: JsonRpcRequest = { jsonrpc: "2.0", id, method };
     if (params) msg.params = params;
-    this._write(msg);
 
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -84,6 +86,10 @@ class StdioTransport implements McpTransport {
           reject(err);
         },
       });
+
+      // Register as pending before writing so very fast servers can't race
+      // and respond before this request id is tracked.
+      this._write(msg);
     });
   }
 
@@ -93,7 +99,11 @@ class StdioTransport implements McpTransport {
     this._write(msg);
   }
 
+  private _destroyed = false;
+
   destroy(): void {
+    if (this._destroyed) return;
+    this._destroyed = true;
     for (const [, p] of this._pending) {
       p.reject(new Error("Transport destroyed"));
     }
@@ -101,7 +111,14 @@ class StdioTransport implements McpTransport {
   }
 
   private _write(msg: unknown): void {
-    this._proc.stdin!.write(JSON.stringify(msg) + "\n", "utf-8");
+    if (!this._proc.stdin || this._proc.stdin.destroyed) {
+      console.error("MCP StdioTransport: stdin is not writable");
+      return;
+    }
+    const data = JSON.stringify(msg) + "\n";
+    this._proc.stdin.write(data, "utf-8", (err) => {
+      if (err) console.error("MCP StdioTransport write error:", err.message);
+    });
   }
 
   private _onData(chunk: Buffer): void {
@@ -119,8 +136,12 @@ class StdioTransport implements McpTransport {
           const p = this._pending.get(msg.id)!;
           this._pending.delete(msg.id);
           p.resolve(msg);
+        } else if (msg.id !== undefined) {
+          console.warn(`MCP StdioTransport: received response for unknown id=${msg.id}, pending ids: [${[...this._pending.keys()]}]`);
         }
-      } catch { /* ignore malformed JSON */ }
+      } catch {
+        console.warn("MCP StdioTransport: non-JSON line from server:", line.slice(0, 200));
+      }
     }
   }
 }
@@ -281,50 +302,66 @@ class McpConnection {
     const label = args[0] || command;
 
     onProgress?.(isNpx ? `Installing ${label}...` : `Starting ${label}...`);
+    console.log(`MCP "${this.name}": spawning ${command} ${args.join(" ")}`);
 
-    const env: Record<string, string> = {
-      ...Object.fromEntries(
-        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
-      ),
-      ...this._config.env,
-    };
+    const baseEnv = Object.fromEntries(
+      Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
+    );
+    const extraPaths = ["/usr/local/bin", "/opt/homebrew/bin", `${process.env.HOME}/.nvm/current/bin`]
+      .filter(p => !(baseEnv.PATH ?? "").includes(p));
+    if (extraPaths.length > 0) {
+      baseEnv.PATH = [baseEnv.PATH, ...extraPaths].filter(Boolean).join(":");
+    }
+    const env: Record<string, string> = { ...baseEnv, ...this._config.env };
 
     this._proc = spawn(command, args, {
       env,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
+    const pid = this._proc.pid;
+    console.log(`MCP "${this.name}": spawned pid=${pid}`);
+
     const stderrChunks: string[] = [];
     this._proc.stderr!.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf-8").trim();
-      if (text) stderrChunks.push(text);
+      if (text) {
+        stderrChunks.push(text);
+        console.log(`MCP "${this.name}" stderr: ${text}`);
+      }
     });
     this._proc.on("error", (err) => {
-      console.error(`MCP "${this.name}" process error: ${err.message}`);
-      this._transport?.destroy();
+      console.error(`MCP "${this.name}" process error (pid=${pid}): ${err.message}`);
+      const t = this._transport;
       this._transport = null;
+      t?.destroy();
     });
-    this._proc.on("exit", (code) => {
+    this._proc.on("exit", (code, signal) => {
+      console.log(`MCP "${this.name}" exited (pid=${pid}): code=${code} signal=${signal}`);
       if (code !== null && code !== 0) {
-        console.error(`MCP "${this.name}" exited with code ${code}: ${stderrChunks.slice(-5).join("\n")}`);
+        console.error(`MCP "${this.name}" stderr tail: ${stderrChunks.slice(-5).join("\n")}`);
       }
-      this._transport?.destroy();
+      const t = this._transport;
       this._transport = null;
       this._proc = null;
+      t?.destroy();
     });
 
     this._transport = new StdioTransport(this._proc);
 
     onProgress?.("Waiting for server handshake...");
     const timeoutMs = isNpx ? 120_000 : 60_000;
+    console.log(`MCP "${this.name}": sending initialize (timeout=${timeoutMs}ms)`);
 
     try {
-      await this._transport.request("initialize", {
+      const initResult = await this._transport.request("initialize", {
         protocolVersion: "2024-11-05",
         capabilities: {},
         clientInfo: { name: "lamia-ide", version: "1.0.0" },
       }, timeoutMs);
+      console.log(`MCP "${this.name}": initialize succeeded`, JSON.stringify(initResult).slice(0, 200));
     } catch (err: any) {
+      console.error(`MCP "${this.name}": initialize failed: ${err.message}`);
       const stderr = stderrChunks.slice(-5).join("\n");
       const detail = stderr ? `${err.message}\nstderr: ${stderr}` : err.message;
       throw new Error(detail);
@@ -333,8 +370,10 @@ class McpConnection {
     this._transport.notify("notifications/initialized");
 
     onProgress?.("Loading tools...");
+    console.log(`MCP "${this.name}": requesting tools/list`);
     const listResult = await this._transport.request("tools/list", {}) as { tools: McpToolDef[] };
     this._tools = listResult.tools ?? [];
+    console.log(`MCP "${this.name}": got ${this._tools.length} tools`);
   }
 
   async callTool(toolName: string, args: Record<string, unknown>): Promise<{ result: string; success: boolean }> {
@@ -363,12 +402,17 @@ class McpConnection {
   }
 
   dispose(): void {
-    this._transport?.destroy();
+    const transport = this._transport;
     this._transport = null;
-    if (this._proc && !this._proc.killed) {
-      this._proc.kill("SIGTERM");
-    }
+    transport?.destroy();
+    const proc = this._proc;
     this._proc = null;
+    if (proc && !proc.killed) {
+      proc.kill("SIGTERM");
+      setTimeout(() => {
+        try { if (!proc.killed) proc.kill("SIGKILL"); } catch { /* already exited */ }
+      }, 2000);
+    }
     this._tools = [];
   }
 }
@@ -383,10 +427,16 @@ export class McpManager {
 
   async initialize(onProgress?: (serverName: string, step: string) => void): Promise<void> {
     const configs = this._readConfigs();
-    if (Object.keys(configs).length === 0) return;
+    const names = Object.keys(configs);
+    console.log(`McpManager.initialize: ${names.length} servers configured: [${names.join(", ")}]`);
+    if (names.length === 0) return;
 
     for (const [name, config] of Object.entries(configs)) {
-      if (config.enabled === false) continue;
+      if (config.enabled === false) {
+        console.log(`McpManager.initialize: skipping "${name}" (disabled)`);
+        continue;
+      }
+      console.log(`McpManager.initialize: connecting "${name}" cmd=${config.command} args=${JSON.stringify(config.args)} url=${config.url}`);
       try {
         const conn = new McpConnection(name, config);
         await conn.connect((step) => onProgress?.(name, step));
@@ -397,9 +447,9 @@ export class McpManager {
           this._toolIndex.set(tool.name, name);
         }
 
-        console.log(`MCP server "${name}" connected with ${conn.tools.length} tools`);
+        console.log(`McpManager.initialize: "${name}" connected with ${conn.tools.length} tools`);
       } catch (err: any) {
-        console.error(`MCP server "${name}" failed: ${err.message}`);
+        console.error(`McpManager.initialize: "${name}" failed: ${err.message}`);
         this._serverErrors.set(name, String(err?.message ?? "Unknown MCP error"));
         vscode.window.showWarningMessage(
           `Lamia: MCP server "${name}" failed to start: ${err.message}`
@@ -538,14 +588,20 @@ export class McpManager {
 
   async reload(onProgress?: (serverName: string, step: string) => void): Promise<void> {
     if (this._reloadInFlight) {
+      console.log("McpManager.reload: waiting for in-flight reload to finish...");
       await this._reloadInFlight;
-      return;
     }
     this._reloadInFlight = (async () => {
+      console.log("McpManager.reload: disposing old connections...");
       this.dispose();
       this._connections.clear();
       this._toolIndex.clear();
+      this._serverErrors.clear();
+      console.log("McpManager.reload: waiting 500ms for processes to exit...");
+      await new Promise(r => setTimeout(r, 500));
+      console.log("McpManager.reload: starting initialize...");
       await this.initialize(onProgress);
+      console.log("McpManager.reload: done");
     })();
     try {
       await this._reloadInFlight;

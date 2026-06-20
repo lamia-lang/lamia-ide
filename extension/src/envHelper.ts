@@ -50,6 +50,15 @@ function writeEnvFile(entries: Record<string, string>): void {
   fs.writeFileSync(ENV_FILE, lines.join("\n") + "\n", "utf8");
 }
 
+export type KeySource = "global_env" | "project_env" | "process_env";
+
+export interface ApiKeyInfo {
+  key: string;
+  source: KeySource;
+  sourceLabel: string;
+  masked: string;
+}
+
 export function getApiKey(provider: string): string | undefined {
   const envVar = PROVIDER_KEY_MAP[provider];
   if (!envVar) return undefined;
@@ -60,6 +69,21 @@ export function getApiKey(provider: string): string | undefined {
 
   // 2. process.env
   return process.env[envVar] || undefined;
+}
+
+export function getApiKeyInfo(provider: string): ApiKeyInfo | undefined {
+  const envVar = PROVIDER_KEY_MAP[provider];
+  if (!envVar) return undefined;
+
+  const fromFile = readEnvFile()[envVar];
+  if (fromFile) {
+    return { key: fromFile, source: "global_env", sourceLabel: "~/.lamia/.env", masked: maskKey(fromFile) };
+  }
+  const fromEnv = process.env[envVar];
+  if (fromEnv) {
+    return { key: fromEnv, source: "process_env", sourceLabel: "environment variable", masked: maskKey(fromEnv) };
+  }
+  return undefined;
 }
 
 export function setApiKey(provider: string, key: string): void {

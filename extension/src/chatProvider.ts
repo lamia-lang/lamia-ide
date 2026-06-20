@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { LamiaProcess, FileWrite } from "./lamiaProcess";
-import { setApiKey, getConfiguredProviders } from "./envHelper";
+import { setApiKey, getConfiguredProviders, validateApiKey } from "./envHelper";
 import {
   readAllProviderModels,
   fetchRuntimeProviderModels,
@@ -33,6 +33,7 @@ import {
   ReviewResult,
 } from "./completionReviewer";
 import { sanitizeAssistantResponseText } from "./responseSanitizer";
+import { McpManager, McpServerInfo } from "./mcpManager";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,7 +53,13 @@ type WebviewMessage =
   | { type: "listChats" }
   | { type: "retry" }
   | { type: "stop" }
-  | { type: "dropFile"; uri: string };
+  | { type: "dropFile"; uri: string }
+  | { type: "command"; command: string }
+  | { type: "openExternal"; url: string }
+  | { type: "getMcpServers" }
+  | { type: "saveMcpServer"; name: string; oldName?: string; config: string }
+  | { type: "deleteMcpServer"; name: string }
+  | { type: "toggleMcpServer"; name: string; enabled: boolean };
 
 type HostMessage =
   | { type: "response"; text: string; model?: string; tokens?: { input: number; output: number } }
@@ -88,6 +95,21 @@ type HostMessage =
       type: "chatList";
       chats: { id: string; title: string; updated: number }[];
       currentId: string;
+    }
+  | {
+      type: "mcpServers";
+      servers: McpServerInfo[];
+    }
+  | {
+      type: "mcpActionResult";
+      ok: boolean;
+      message: string;
+    }
+  | {
+      type: "apiKeyValidation";
+      provider: string;
+      valid: boolean;
+      error?: string;
     }
 ;
 
@@ -201,7 +223,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   private _compressing = false;
   private _reviewRound = 0;
 
-  constructor(private readonly _context: vscode.ExtensionContext) {
+  constructor(
+    private readonly _context: vscode.ExtensionContext,
+    private readonly _mcpManager?: McpManager,
+  ) {
     this._chat = loadLatestChat() || newChat();
 
     this._context.subscriptions.push(
@@ -453,6 +478,10 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     const configPath = getChatConfigPath();
 
     this._process = new LamiaProcess(cliPath, cwd, logFile, configPath);
+    if (this._mcpManager) {
+      const mcpManager = this._mcpManager;
+      this._process.toolRequestHandler = (tool, args) => mcpManager.callTool(tool, args);
+    }
     return this._process;
   }
 
@@ -472,6 +501,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         await this._sendInit();
         break;
 
+      case "command": {
+        if (message.command) vscode.commands.executeCommand(message.command);
+        break;
+      }
+
+      case "openExternal": {
+        vscode.env.openExternal(vscode.Uri.parse(message.url));
+        break;
+      }
+
       case "changeModel": {
         writeSelectedModel(message.model);
         if (this._process) {
@@ -486,6 +525,14 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           this._process.restart();
         }
         await this._sendInit();
+        validateApiKey(message.provider, message.key).then((result) => {
+          this._post({
+            type: "apiKeyValidation",
+            provider: message.provider,
+            valid: result.valid,
+            error: result.valid ? undefined : result.error,
+          });
+        });
         break;
       }
 
@@ -525,6 +572,71 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
         break;
       }
 
+      case "getMcpServers": {
+        const servers = this._mcpManager?.getServerList() ?? [];
+        this._post({ type: "mcpServers", servers });
+        break;
+      }
+
+      case "saveMcpServer": {
+        if (!this._mcpManager) break;
+        try {
+          const config = JSON.parse(message.config);
+          if (!config || typeof config !== "object") {
+            throw new Error("Config must be a JSON object");
+          }
+          const hasCommand = typeof config.command === "string" && config.command.trim();
+          const hasUrl = typeof config.url === "string" && config.url.trim();
+          if (!hasCommand && !hasUrl) {
+            throw new Error("Config must have either a 'command' (stdio) or 'url' (HTTP) field");
+          }
+          this._post({ type: "mcpActionResult", ok: true, message: "Config saved. Starting servers..." });
+          await this._mcpManager.saveServer(message.name, config, message.oldName);
+          await this._mcpManager.reload((serverName, step) => {
+            this._post({ type: "mcpActionResult", ok: true, message: `${serverName}: ${step}` });
+          });
+          this._post({ type: "mcpServers", servers: this._mcpManager.getServerList() });
+          const servers = this._mcpManager.getServerList();
+          const thisServer = servers.find(s => s.name === message.name.trim());
+          if (thisServer && !thisServer.connected && thisServer.lastError) {
+            this._post({ type: "mcpActionResult", ok: false, message: thisServer.lastError });
+          } else {
+            this._post({ type: "mcpActionResult", ok: true, message: thisServer?.connected
+              ? `${message.name}: running (${thisServer.toolCount} tools)`
+              : "MCP server saved." });
+          }
+        } catch (err: any) {
+          const errorText = err.message.startsWith("Config must")
+            ? err.message
+            : `Failed: ${err.message}`;
+          this._post({ type: "mcpActionResult", ok: false, message: errorText });
+        }
+        break;
+      }
+
+      case "deleteMcpServer": {
+        if (!this._mcpManager) break;
+        await this._mcpManager.deleteServer(message.name);
+        this._post({ type: "mcpServers", servers: this._mcpManager.getServerList() });
+        this._post({ type: "mcpActionResult", ok: true, message: "MCP server removed." });
+        break;
+      }
+
+      case "toggleMcpServer": {
+        if (!this._mcpManager) break;
+        await this._mcpManager.toggleServer(message.name, message.enabled);
+        await this._mcpManager.reload((serverName, step) => {
+          this._post({ type: "mcpActionResult", ok: true, message: `${serverName}: ${step}` });
+        });
+        this._post({ type: "mcpServers", servers: this._mcpManager.getServerList() });
+        this._post({
+          type: "mcpActionResult",
+          ok: true,
+          message: message.enabled ? "MCP server enabled." : "MCP server disabled.",
+        });
+        break;
+      }
+
       case "send": {
         this._generating = true;
         this._post({ type: "thinking", active: true });
@@ -560,8 +672,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
           const history = this._buildHistoryForLLM();
 
+          const mcpToolsHint = this._mcpManager?.getToolDefinitionsForPrompt() || "";
+          const systemHint = mcpToolsHint
+            ? SYSTEM_HINT + "\n\n" + mcpToolsHint
+            : SYSTEM_HINT;
+
           const response = await proc.send(llmMessage, {
-            system: SYSTEM_HINT,
+            system: systemHint,
             files,
             messages: history,
             onToolUse: (tool, args, label) => {
@@ -892,6 +1009,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
   <title>Lamia Chat</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    .hidden { display: none !important; }
 
     body {
       font-family: var(--vscode-font-family);
@@ -902,6 +1020,16 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
+    }
+    body.settings-mode #chat-history-panel,
+    body.settings-mode #chat-messages,
+    body.settings-mode #input-area {
+      display: none;
+    }
+    body.history-mode #setup-panel,
+    body.history-mode #chat-messages,
+    body.history-mode #input-area {
+      display: none;
     }
 
     /* ── Header bar ────────────────────────────────────────────────────── */
@@ -941,6 +1069,12 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       flex-shrink: 0;
     }
     #setup-panel.hidden { display: none; }
+    body.settings-mode #setup-panel {
+      display: block;
+      flex: 1;
+      overflow-y: auto;
+      border-bottom: none;
+    }
     #setup-panel h3 { font-size: 12px; margin-bottom: 8px; }
     .setup-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
     .setup-row label { font-size: 11px; opacity: 0.7; }
@@ -964,6 +1098,78 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     #save-key-btn:hover { background: var(--vscode-button-hoverBackground); }
     .setup-status { font-size: 11px; opacity: 0.6; margin-top: 4px; }
     .setup-status .configured { color: var(--vscode-charts-green, #4ec); }
+    .setup-status .key-invalid { color: var(--vscode-errorForeground, #f44); }
+
+    /* ── MCP settings ────────────────────────────────────────────────── */
+    .mcp-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 6px; margin-bottom: 2px;
+      border-radius: 3px; font-size: 12px;
+      cursor: pointer;
+    }
+    .mcp-item:hover { background: var(--vscode-list-hoverBackground); }
+    .mcp-item input[type="checkbox"] { margin: 0; cursor: pointer; flex-shrink: 0; }
+    .mcp-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mcp-item-status {
+      font-size: 10px; opacity: 0.6; flex-shrink: 0;
+    }
+    .mcp-item-status.running { color: var(--vscode-charts-green, #4ec); opacity: 1; }
+    .mcp-item-status.failed { color: var(--vscode-errorForeground, #f44); opacity: 1; cursor: help; }
+    .mcp-tools-list {
+      font-size: 10px; opacity: 0.5; padding: 2px 0 4px 28px;
+      line-height: 1.5; word-break: break-word;
+    }
+    .mcp-add-btn {
+      width: 100%; padding: 4px; margin-top: 4px;
+      background: transparent; color: var(--vscode-textLink-foreground);
+      border: 1px dashed var(--vscode-input-border, #555);
+      border-radius: 3px; font-size: 11px; cursor: pointer;
+      font-family: inherit;
+    }
+    .mcp-add-btn:hover { background: var(--vscode-list-hoverBackground); }
+    .mcp-add-btn:disabled,
+    #mcp-save-btn:disabled,
+    #mcp-delete-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #mcp-delete-btn {
+      background: transparent;
+      color: var(--vscode-errorForeground, #f44);
+      border: 1px solid var(--vscode-errorForeground, #f44);
+      border-radius: 3px; padding: 4px 10px; font-size: 12px;
+      font-family: inherit; cursor: pointer;
+    }
+    #mcp-config {
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 3px; padding: 6px; font-size: 11px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      resize: vertical; width: 100%; box-sizing: border-box;
+    }
+    #mcp-name {
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 3px; padding: 4px 6px; font-size: 12px;
+      font-family: inherit; width: 100%; box-sizing: border-box;
+    }
+    #mcp-save-btn {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none; border-radius: 3px; padding: 4px 10px;
+      font-size: 12px; font-family: inherit; cursor: pointer;
+    }
+    #mcp-save-btn:hover { background: var(--vscode-button-hoverBackground); }
+    #mcp-status {
+      margin-top: 6px;
+      font-size: 11px;
+      opacity: 0.75;
+      min-height: 16px;
+    }
+    #mcp-status.error { color: var(--vscode-errorForeground, #f44); }
+    #mcp-status.ok { color: var(--vscode-charts-green, #4ec); }
 
     /* ── Chat history panel ──────────────────────────────────────────── */
     #chat-history-panel {
@@ -971,6 +1177,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       max-height: 50vh; overflow-y: auto; flex-shrink: 0;
     }
     #chat-history-panel.hidden { display: none; }
+    body.history-mode #chat-history-panel {
+      display: block;
+      flex: 1;
+      max-height: none;
+      overflow-y: auto;
+      border-bottom: none;
+    }
     .chat-item {
       display: flex; align-items: center; gap: 6px;
       padding: 6px 10px; cursor: pointer; font-size: 12px;
@@ -1337,6 +1550,41 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     </div>
     <button id="save-key-btn">Save Key</button>
     <div id="setup-status" class="setup-status"></div>
+
+    <h3 style="margin-top: 16px;">MCP Servers</h3>
+    <div id="mcp-list"></div>
+    <button id="mcp-add-btn" class="mcp-add-btn">+ Add MCP Server</button>
+
+    <div id="mcp-editor" class="hidden">
+      <div class="setup-row">
+        <label>Server Name</label>
+        <input id="mcp-name" type="text" placeholder="e.g. playwright" />
+      </div>
+      <div class="setup-row">
+        <label>Command <span style="opacity:0.5;font-weight:normal">(npx package or full path)</span></label>
+        <input id="mcp-command" type="text" placeholder="npx @playwright/mcp@latest" />
+      </div>
+      <div class="setup-row" id="mcp-env-row" style="display:none;">
+        <label>Environment Variables <span style="opacity:0.5;font-weight:normal">(KEY=VALUE per line)</span></label>
+        <textarea id="mcp-env" rows="2" placeholder="GITHUB_TOKEN=ghp_..."></textarea>
+      </div>
+      <div style="margin-top:4px;">
+        <a id="mcp-advanced-toggle" href="#" style="font-size:11px;opacity:0.7;">Show advanced (JSON)</a>
+      </div>
+      <div class="setup-row hidden" id="mcp-json-row">
+        <label>Configuration (JSON)</label>
+        <textarea id="mcp-config" rows="5" placeholder='{"command":"npx","args":["@playwright/mcp@latest"]}'></textarea>
+      </div>
+      <div style="display: flex; gap: 6px; margin-top: 4px;">
+        <button id="mcp-save-btn">Save</button>
+        <button id="mcp-delete-btn" class="hidden">Delete Server</button>
+      </div>
+    </div>
+
+    <div style="margin-top: 8px; font-size: 11px; opacity: 0.7;">
+      <a href="#" id="mcp-docs-link" style="color: var(--vscode-textLink-foreground); text-decoration: none;">MCP Guide</a>
+    </div>
+    <div id="mcp-status"></div>
   </div>
 
   <!-- Message history -->
@@ -1379,10 +1627,42 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
     // ── Setup / Settings ────────────────────────────────────────────────── 
 
+    function openSetup() {
+      const panel = document.getElementById("setup-panel");
+      panel.classList.remove("hidden");
+      document.body.classList.add("settings-mode");
+      document.body.classList.remove("history-mode");
+      document.getElementById("chat-history-panel").classList.add("hidden");
+      updateSetupStatus();
+      vscodeApi.postMessage({ type: "getMcpServers" });
+    }
+
+    function closeSetup() {
+      const panel = document.getElementById("setup-panel");
+      panel.classList.add("hidden");
+      document.body.classList.remove("settings-mode");
+    }
+
+    function openHistory() {
+      closeSetup();
+      document.body.classList.add("history-mode");
+      const panel = document.getElementById("chat-history-panel");
+      panel.classList.remove("hidden");
+      vscodeApi.postMessage({ type: "listChats" });
+    }
+
+    function closeHistory() {
+      document.body.classList.remove("history-mode");
+      document.getElementById("chat-history-panel").classList.add("hidden");
+    }
+
     function toggleSetup() {
       const panel = document.getElementById("setup-panel");
-      panel.classList.toggle("hidden");
-      updateSetupStatus();
+      if (panel.classList.contains("hidden")) {
+        openSetup();
+      } else {
+        closeSetup();
+      }
     }
 
     function onProviderChange() {
@@ -1390,14 +1670,26 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       updateSetupStatus();
     }
 
+    var keyValidationStatus = {};
+
     function updateSetupStatus() {
-      const el = document.getElementById("setup-status");
-      const lines = [];
-      if (configuredProviders.includes("anthropic")) {
-        lines.push('<span class="configured">Anthropic: configured</span>');
-      }
-      if (configuredProviders.includes("openai")) {
-        lines.push('<span class="configured">OpenAI: configured</span>');
+      var el = document.getElementById("setup-status");
+      var lines = [];
+      var providers = ["anthropic", "openai"];
+      for (var pi = 0; pi < providers.length; pi++) {
+        var p = providers[pi];
+        var label = p.charAt(0).toUpperCase() + p.slice(1);
+        if (!configuredProviders.includes(p)) continue;
+        var v = keyValidationStatus[p];
+        if (v === "valid") {
+          lines.push('<span class="configured">' + label + ': valid</span>');
+        } else if (v === "invalid") {
+          lines.push('<span class="key-invalid">' + label + ': invalid key</span>');
+        } else if (v === "checking") {
+          lines.push('<span>' + label + ': checking...</span>');
+        } else {
+          lines.push('<span class="configured">' + label + ': configured</span>');
+        }
       }
       if (lines.length === 0) {
         lines.push("No API keys configured yet.");
@@ -1406,11 +1698,207 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     }
 
     function saveApiKey() {
-      const provider = document.getElementById("setup-provider").value;
-      const key = document.getElementById("setup-key").value.trim();
+      var provider = document.getElementById("setup-provider").value;
+      var key = document.getElementById("setup-key").value.trim();
       if (!key) return;
-      vscodeApi.postMessage({ type: "saveApiKey", provider, key });
+      keyValidationStatus[provider] = "checking";
+      updateSetupStatus();
+      vscodeApi.postMessage({ type: "saveApiKey", provider: provider, key: key });
       document.getElementById("setup-key").value = "";
+    }
+
+    // ── MCP servers UI ────────────────────────────────────────────────────
+
+    var mcpServers = [];
+    var mcpEditingName = null;
+    var mcpSaving = false;
+
+    function setMcpStatus(message, kind) {
+      var el = document.getElementById("mcp-status");
+      if (!el) return;
+      el.textContent = message || "";
+      el.classList.remove("error", "ok");
+      if (kind === "error") el.classList.add("error");
+      if (kind === "ok") el.classList.add("ok");
+    }
+
+    function setMcpSavingState(saving) {
+      mcpSaving = saving;
+      var saveBtn = document.getElementById("mcp-save-btn");
+      var deleteBtn = document.getElementById("mcp-delete-btn");
+      var addBtn = document.getElementById("mcp-add-btn");
+      saveBtn.disabled = saving;
+      if (saving) saveBtn.textContent = "Starting...";
+      deleteBtn.disabled = saving;
+      addBtn.disabled = saving;
+    }
+
+    function renderMcpList() {
+      var list = document.getElementById("mcp-list");
+      list.innerHTML = "";
+      if (mcpServers.length === 0) {
+        list.innerHTML = '<div style="font-size:11px;opacity:0.5;padding:4px 0;">No MCP servers configured.</div>';
+        return;
+      }
+      for (var i = 0; i < mcpServers.length; i++) {
+        (function(srv) {
+          var item = document.createElement("div");
+          item.className = "mcp-item";
+
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = srv.enabled;
+          cb.title = srv.enabled ? "Disable" : "Enable";
+          cb.addEventListener("change", function(e) {
+            e.stopPropagation();
+            vscodeApi.postMessage({ type: "toggleMcpServer", name: srv.name, enabled: cb.checked });
+          });
+
+          var nameSpan = document.createElement("span");
+          nameSpan.className = "mcp-item-name";
+          nameSpan.textContent = srv.name;
+
+          var status = document.createElement("span");
+          if (srv.connected) {
+            status.className = "mcp-item-status running";
+            status.textContent = "running (" + srv.toolCount + " tool" + (srv.toolCount !== 1 ? "s" : "") + ")";
+          } else if (!srv.enabled) {
+            status.className = "mcp-item-status";
+            status.textContent = "disabled";
+          } else if (srv.lastError) {
+            status.className = "mcp-item-status failed";
+            status.textContent = "failed";
+            status.title = srv.lastError;
+          } else {
+            status.className = "mcp-item-status";
+            status.textContent = "stopped";
+          }
+
+          item.appendChild(cb);
+          item.appendChild(nameSpan);
+          item.appendChild(status);
+
+          var wrapper = document.createElement("div");
+
+          item.addEventListener("click", function() {
+            if (mcpSaving) return;
+            mcpEditingName = srv.name;
+            document.getElementById("mcp-name").value = srv.name;
+            document.getElementById("mcp-name").disabled = false;
+            var cfg = Object.assign({}, srv.config);
+            delete cfg.enabled;
+            populateMcpEditor(cfg);
+            document.getElementById("mcp-editor").classList.remove("hidden");
+            document.getElementById("mcp-delete-btn").classList.remove("hidden");
+            var saveBtn = document.getElementById("mcp-save-btn");
+            saveBtn.textContent = (srv.enabled && !srv.connected) ? "Retry" : "Save";
+            setMcpStatus("");
+          });
+
+          wrapper.appendChild(item);
+
+          if (srv.connected && srv.toolNames && srv.toolNames.length > 0) {
+            var toolsDiv = document.createElement("div");
+            toolsDiv.className = "mcp-tools-list";
+            toolsDiv.textContent = srv.toolNames.join(", ");
+            wrapper.appendChild(toolsDiv);
+          }
+
+          list.appendChild(wrapper);
+        })(mcpServers[i]);
+      }
+    }
+
+    function populateMcpEditor(cfg) {
+      var commandField = document.getElementById("mcp-command");
+      var envField = document.getElementById("mcp-env");
+      var envRow = document.getElementById("mcp-env-row");
+      var jsonRow = document.getElementById("mcp-json-row");
+      var configField = document.getElementById("mcp-config");
+      var toggle = document.getElementById("mcp-advanced-toggle");
+
+      if (cfg.url) {
+        commandField.value = "";
+        envRow.style.display = "none";
+        jsonRow.classList.remove("hidden");
+        configField.value = JSON.stringify(cfg, null, 2);
+        toggle.textContent = "Hide advanced (JSON)";
+      } else {
+        var parts = [cfg.command || ""];
+        if (cfg.args) parts = parts.concat(cfg.args);
+        commandField.value = parts.join(" ");
+        if (cfg.env && Object.keys(cfg.env).length > 0) {
+          envRow.style.display = "";
+          envField.value = Object.entries(cfg.env).map(function(e) { return e[0] + "=" + e[1]; }).join("\\n");
+        } else {
+          envRow.style.display = "none";
+          envField.value = "";
+        }
+        jsonRow.classList.add("hidden");
+        toggle.textContent = "Show advanced (JSON)";
+      }
+    }
+
+    function showMcpAddForm() {
+      if (mcpSaving) return;
+      mcpEditingName = null;
+      document.getElementById("mcp-name").value = "";
+      document.getElementById("mcp-name").disabled = false;
+      document.getElementById("mcp-command").value = "npx @playwright/mcp@latest";
+      document.getElementById("mcp-env").value = "";
+      document.getElementById("mcp-env-row").style.display = "none";
+      document.getElementById("mcp-json-row").classList.add("hidden");
+      document.getElementById("mcp-advanced-toggle").textContent = "Show advanced (JSON)";
+      document.getElementById("mcp-config").value = "";
+      document.getElementById("mcp-editor").classList.remove("hidden");
+      document.getElementById("mcp-delete-btn").classList.add("hidden");
+      document.getElementById("mcp-save-btn").textContent = "Save";
+      setMcpStatus("");
+    }
+
+    function buildConfigFromFields() {
+      var jsonRow = document.getElementById("mcp-json-row");
+      if (!jsonRow.classList.contains("hidden")) {
+        return document.getElementById("mcp-config").value.trim();
+      }
+      var cmdText = document.getElementById("mcp-command").value.trim();
+      if (!cmdText) return "";
+      var parts = cmdText.split(/\s+/);
+      var config = { command: parts[0] };
+      if (parts.length > 1) config.args = parts.slice(1);
+      var envText = document.getElementById("mcp-env").value.trim();
+      if (envText) {
+        config.env = {};
+        envText.split("\\n").forEach(function(line) {
+          var eq = line.indexOf("=");
+          if (eq > 0) config.env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+        });
+      }
+      return JSON.stringify(config);
+    }
+
+    function saveMcpServer() {
+      if (mcpSaving) return;
+      var name = document.getElementById("mcp-name").value.trim();
+      var configText = buildConfigFromFields();
+      if (!name) {
+        setMcpStatus("Server name is required.", "error");
+        return;
+      }
+      if (!configText) {
+        setMcpStatus("Configuration JSON is required.", "error");
+        return;
+      }
+      setMcpSavingState(true);
+      setMcpStatus("Saving config...", "");
+      vscodeApi.postMessage({ type: "saveMcpServer", name: name, oldName: mcpEditingName || undefined, config: configText });
+    }
+
+    function deleteCurrentMcpServer() {
+      if (mcpSaving || !mcpEditingName) return;
+      setMcpSavingState(true);
+      setMcpStatus("Removing MCP server...", "");
+      vscodeApi.postMessage({ type: "deleteMcpServer", name: mcpEditingName });
     }
 
     // ── Model dropdown ────────────────────────────────────────────────────
@@ -1951,10 +2439,9 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     function toggleHistory() {
       const panel = document.getElementById("chat-history-panel");
       if (panel.classList.contains("hidden")) {
-        vscodeApi.postMessage({ type: "listChats" });
-        panel.classList.remove("hidden");
+        openHistory();
       } else {
-        panel.classList.add("hidden");
+        closeHistory();
       }
     }
 
@@ -2003,7 +2490,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     // ── Event wiring ──────────────────────────────────────────────────────
 
     document.getElementById("new-chat-btn").addEventListener("click", function() {
-      document.getElementById("chat-history-panel").classList.add("hidden");
+      closeHistory();
+      closeSetup();
       vscodeApi.postMessage({ type: "newChat" });
     });
     document.getElementById("close-models-btn").addEventListener("click", closeAddModelsDialog);
@@ -2015,6 +2503,41 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     document.getElementById("model-select").addEventListener("change", onModelChange);
     document.getElementById("setup-provider").addEventListener("change", onProviderChange);
     document.getElementById("save-key-btn").addEventListener("click", saveApiKey);
+    document.getElementById("mcp-add-btn").addEventListener("click", showMcpAddForm);
+    document.getElementById("mcp-save-btn").addEventListener("click", saveMcpServer);
+    document.getElementById("mcp-delete-btn").addEventListener("click", deleteCurrentMcpServer);
+    document.getElementById("mcp-advanced-toggle").addEventListener("click", function(e) {
+      e.preventDefault();
+      var jsonRow = document.getElementById("mcp-json-row");
+      var envRow = document.getElementById("mcp-env-row");
+      if (jsonRow.classList.contains("hidden")) {
+        var configText = buildConfigFromFields();
+        if (configText) {
+          try { document.getElementById("mcp-config").value = JSON.stringify(JSON.parse(configText), null, 2); }
+          catch(ex) { document.getElementById("mcp-config").value = configText; }
+        }
+        jsonRow.classList.remove("hidden");
+        envRow.style.display = "none";
+        this.textContent = "Hide advanced (JSON)";
+      } else {
+        jsonRow.classList.add("hidden");
+        try {
+          var cfg = JSON.parse(document.getElementById("mcp-config").value);
+          populateMcpEditor(cfg);
+        } catch(ex) {}
+        this.textContent = "Show advanced (JSON)";
+      }
+    });
+    document.getElementById("mcp-command").addEventListener("input", function() {
+      var envRow = document.getElementById("mcp-env-row");
+      if (this.value.trim()) {
+        envRow.style.display = "";
+      }
+    });
+    document.getElementById("mcp-docs-link").addEventListener("click", function(e) {
+      e.preventDefault();
+      vscodeApi.postMessage({ type: "openExternal", url: "https://lamia-lang.github.io/lamia-ide/configuration/mcp-servers/" });
+    });
     document.getElementById("send-btn").addEventListener("click", sendMessage);
     document.getElementById("stop-btn").addEventListener("click", function() {
       // Emergency local unstick even if extension host is delayed.
@@ -2153,10 +2676,13 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           updateSetupStatus();
           clearMessages();
           restoreMessages(msg.messages);
+          vscodeApi.postMessage({ type: "getMcpServers" });
           if (configuredProviders.length === 0) {
-            document.getElementById("setup-panel").classList.remove("hidden");
+            closeHistory();
+            openSetup();
           } else {
-            document.getElementById("setup-panel").classList.add("hidden");
+            closeHistory();
+            closeSetup();
           }
           break;
         case "updateModels":
@@ -2164,6 +2690,30 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
           allModelsCatalog = msg.allModels || msg.models || [];
           configuredProviders = msg.configuredProviders;
           populateModels(null);
+          updateSetupStatus();
+          break;
+        case "mcpServers":
+          mcpServers = msg.servers || [];
+          renderMcpList();
+          var failedServers = mcpServers.filter(function(s) { return s.enabled && !s.connected; });
+          if (failedServers.length > 0) {
+            var names = failedServers.map(function(s) { return s.name; }).join(", ");
+            setMcpStatus(names + " failed to start. Click the server name to check its config. Saving the config will restart it.", "error");
+          }
+          break;
+        case "mcpActionResult":
+          setMcpStatus(msg.message || (msg.ok ? "Done." : "Failed."), msg.ok ? "ok" : "error");
+          if (!msg.ok || msg.message.indexOf("running (") !== -1 || msg.message === "MCP server saved." || msg.message === "MCP server removed.") {
+            setMcpSavingState(false);
+            if (msg.ok) {
+              document.getElementById("mcp-editor").classList.add("hidden");
+              document.getElementById("mcp-delete-btn").classList.add("hidden");
+              mcpEditingName = null;
+            }
+          }
+          break;
+        case "apiKeyValidation":
+          keyValidationStatus[msg.provider] = msg.valid ? "valid" : "invalid";
           updateSetupStatus();
           break;
         case "toolProgress":

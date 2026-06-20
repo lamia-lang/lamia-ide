@@ -21,8 +21,10 @@ import { LamiaExecutableDecorationProvider } from "./executableDecorationProvide
 import { FileReferenceCompletionProvider } from "./fileReferenceCompletionProvider";
 import { LamiaDiagnosticsProvider } from "./diagnosticsProvider";
 import { checkForUpdate } from "./updateChecker";
+import { McpManager } from "./mcpManager";
 
 let _chatProvider: LamiaChatProvider | undefined;
+let _mcpManager: McpManager | undefined;
 let _runningExecution: vscode.TaskExecution | undefined;
 
 function setRunning(running: boolean): void {
@@ -188,7 +190,23 @@ export function activate(context: vscode.ExtensionContext) {
   const diagProvider = new LamiaDiagnosticsProvider();
   context.subscriptions.push(diagProvider);
 
-  const chatProvider = new LamiaChatProvider(context);
+  const mcpManager = new McpManager();
+  _mcpManager = mcpManager;
+  mcpManager.initialize().catch(err => {
+    console.error("MCP initialization failed:", err);
+  });
+  context.subscriptions.push({ dispose: () => mcpManager.dispose() });
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration("lamia.mcp.servers")) {
+        mcpManager.reload().catch(err => {
+          console.error("MCP reload failed:", err);
+        });
+      }
+    })
+  );
+
+  const chatProvider = new LamiaChatProvider(context, mcpManager);
   _chatProvider = chatProvider;
 
   context.subscriptions.push(
@@ -348,4 +366,5 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   _chatProvider?.dispose();
+  _mcpManager?.dispose();
 }

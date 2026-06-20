@@ -323,6 +323,11 @@
           "type": "number",
           "default": 300000,
           "description": "Milliseconds to wait for a lamia CLI response before timing out. Set to 0 to disable timeout."
+        },
+        "lamia.mcp.servers": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "MCP server configurations. Managed via the chat settings panel (gear icon > MCP Servers)."
         }
       }
     }

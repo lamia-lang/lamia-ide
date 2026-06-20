@@ -76,3 +76,54 @@ export function maskKey(key: string): string {
   if (key.length <= 8) return "****";
   return key.slice(0, 4) + "..." + key.slice(-4);
 }
+
+const VALIDATION_ENDPOINTS: Record<string, { url: string; headers: (key: string) => Record<string, string> }> = {
+  openai: {
+    url: "https://api.openai.com/v1/models",
+    headers: (key) => ({ "Authorization": `Bearer ${key}` }),
+  },
+  anthropic: {
+    url: "https://api.anthropic.com/v1/models",
+    headers: (key) => ({
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    }),
+  },
+};
+
+export type KeyValidationResult = { valid: true } | { valid: false; error: string };
+
+export async function validateApiKey(provider: string, key: string): Promise<KeyValidationResult> {
+  const endpoint = VALIDATION_ENDPOINTS[provider];
+  if (!endpoint) {
+    return { valid: true };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(endpoint.url, {
+      method: "GET",
+      headers: endpoint.headers(key),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      return { valid: true };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { valid: false, error: "Invalid API key" };
+    }
+    if (res.status === 429) {
+      return { valid: true };
+    }
+    return { valid: false, error: `API returned ${res.status}` };
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      return { valid: true };
+    }
+    return { valid: true };
+  }
+}

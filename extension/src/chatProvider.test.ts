@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildFileContextPrefix, deduplicateFileWrites } from "./chatProvider";
+import { Script } from "vm";
+import { buildFileContextPrefix, deduplicateFileWrites, LamiaChatProvider } from "./chatProvider";
 
 describe("buildFileContextPrefix", () => {
   it("returns empty string for undefined", () => {
@@ -58,5 +59,82 @@ describe("deduplicateFileWrites", () => {
     expect(deduped).toHaveLength(1);
     expect(deduped[0].action).toBe("modify");
     expect(deduped[0].content).toBe("2");
+  });
+});
+
+function extractWebviewScript(): string {
+  const html = (LamiaChatProvider.prototype as any)._getHtmlForWebview.call({});
+  const match = html.match(/<script nonce="[^"]*">([\s\S]*?)<\/script>/);
+  return match ? match[1] : "";
+}
+
+describe("chat webview script", () => {
+  it("has valid JavaScript syntax", () => {
+    const script = extractWebviewScript();
+    expect(script.length).toBeGreaterThan(100);
+    expect(() => new Script(script)).not.toThrow();
+  });
+
+  it("openSetup sets settings-mode and removes history-mode", () => {
+    const script = extractWebviewScript();
+    const openSetupMatch = script.match(/function openSetup\(\)\s*\{([\s\S]*?)\n    \}/);
+    expect(openSetupMatch).toBeTruthy();
+    const body = openSetupMatch![1];
+    expect(body).toContain('classList.add("settings-mode")');
+    expect(body).toContain('classList.remove("history-mode")');
+  });
+
+  it("openHistory sets history-mode and closes settings", () => {
+    const script = extractWebviewScript();
+    const openHistoryMatch = script.match(/function openHistory\(\)\s*\{([\s\S]*?)\n    \}/);
+    expect(openHistoryMatch).toBeTruthy();
+    const body = openHistoryMatch![1];
+    expect(body).toContain("closeSetup()");
+    expect(body).toContain('classList.add("history-mode")');
+  });
+
+  it("closeSetup removes settings-mode", () => {
+    const script = extractWebviewScript();
+    const match = script.match(/function closeSetup\(\)\s*\{([\s\S]*?)\n    \}/);
+    expect(match).toBeTruthy();
+    expect(match![1]).toContain('classList.remove("settings-mode")');
+  });
+
+  it("closeHistory removes history-mode", () => {
+    const script = extractWebviewScript();
+    const match = script.match(/function closeHistory\(\)\s*\{([\s\S]*?)\n    \}/);
+    expect(match).toBeTruthy();
+    expect(match![1]).toContain('classList.remove("history-mode")');
+  });
+
+  it("does not reference removed reconnect elements", () => {
+    const script = extractWebviewScript();
+    expect(script).not.toContain("mcp-reconnect");
+    expect(script).not.toContain("reconnectMcpServers");
+    expect(script).not.toContain("mcp-cancel");
+  });
+
+  it("uses running/failed/disabled status labels not connected/disconnected", () => {
+    const script = extractWebviewScript();
+    expect(script).not.toMatch(/status\.textContent\s*=\s*"connected"/);
+    expect(script).not.toMatch(/status\.textContent\s*=\s*"disconnected"/);
+    expect(script).toContain('"running (');
+    expect(script).toContain('"failed"');
+    expect(script).toContain('"disabled"');
+  });
+
+  it("handles apiKeyValidation message and updates status", () => {
+    const script = extractWebviewScript();
+    expect(script).toContain("apiKeyValidation");
+    expect(script).toContain("keyValidationStatus");
+    expect(script).toContain('"valid"');
+    expect(script).toContain('"invalid"');
+    expect(script).toContain('"checking"');
+  });
+
+  it("shows Retry button text for failed servers", () => {
+    const script = extractWebviewScript();
+    expect(script).toContain('"Retry"');
+    expect(script).toContain('"Starting..."');
   });
 });

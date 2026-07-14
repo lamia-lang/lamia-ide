@@ -1,6 +1,6 @@
 {
   "workbench.colorTheme": "Default Dark Modern",
-  "workbench.startupEditor": "welcomePage",
+  "workbench.startupEditor": "none",
   "editor.fontSize": 14,
   "editor.lineHeight": 1.6,
   "editor.minimap.enabled": false,

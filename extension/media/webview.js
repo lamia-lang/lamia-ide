@@ -1121,13 +1121,12 @@ window.addEventListener("message", event => {
       clearMessages();
       restoreMessages(msg.messages);
       vscodeApi.postMessage({ type: "getMcpServers" });
-      if (configuredProviders.length === 0) {
-        closeHistory();
-        openSetup();
-      } else {
-        closeHistory();
-        closeSetup();
+      {
+        const banner = document.getElementById("free-tier-banner");
+        if (banner) banner.classList.toggle("hidden", !msg.freeTier);
       }
+      closeHistory();
+      closeSetup();
       break;
     case "updateModels":
       visibleModels = msg.models || [];
@@ -1190,17 +1189,21 @@ window.addEventListener("message", event => {
       if (errEl) {
         errEl.classList.add("error-" + eType);
         var bubble = errEl.querySelector(".message-bubble");
-        if (eType === "auth") {
+        if (eType === "auth" || eType === "rate_limit") {
           var keyBtn = document.createElement("button");
           keyBtn.className = "error-action-btn";
-          keyBtn.textContent = "Update API Key";
+          keyBtn.textContent = eType === "rate_limit" ? "Switch provider" : "Update API Key";
           keyBtn.addEventListener("click", function() {
+            if (eType === "rate_limit") {
+              openAddModelsDialog();
+              return;
+            }
             var settingsBtn = document.getElementById("settings-btn");
             if (settingsBtn) settingsBtn.click();
           });
           bubble.appendChild(keyBtn);
         }
-        if (eType !== "auth" && eType !== "quota") {
+        if (eType !== "auth" && eType !== "quota" && eType !== "rate_limit") {
           var retryBtn = document.createElement("button");
           retryBtn.className = "error-action-btn";
           retryBtn.textContent = "Retry";

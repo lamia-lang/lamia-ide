@@ -14,7 +14,7 @@ interface ModelEntry {
 }
 
 export type ModelList = Record<string, ModelEntry[]>;
-export type ModelOption = { value: string; label: string; disabled?: boolean; provider?: string; isCustom?: boolean };
+export type ModelOption = { value: string; label: string; disabled?: boolean; provider?: string; isCustom?: boolean; locked?: boolean };
 
 export interface SubProjectInfo {
   name: string;
@@ -389,6 +389,28 @@ export function buildModelDropdown(
     if (hasRuntimeModels) continue;
     for (const model of models) {
       addModel(model.id, provider);
+    }
+  }
+
+  // Show locked models for providers without a configured key
+  for (const [provider, models] of Object.entries(fallbackModels)) {
+    if (provider === "openrouter") continue;
+    if (configuredProviders.includes(provider)) continue;
+    for (const model of models) {
+      const fullModel = ensureProviderPrefix(model.id, provider);
+      if (!fullModel) continue;
+      const key = normalizeModelKey(fullModel);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const friendly = fallbackLabelMap.get(key);
+      const label = friendly || humanLabel(fullModel);
+      const item: ModelOption = {
+        value: fullModel,
+        label,
+        provider,
+        locked: true,
+      };
+      allItems.push(item);
     }
   }
 

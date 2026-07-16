@@ -352,8 +352,8 @@ function populateModels(serverSelectedModel) {
   for (const m of visibleModels) {
     const opt = document.createElement("option");
     opt.value = m.value;
-    opt.textContent = m.label;
-    if (m.disabled) opt.disabled = true;
+    opt.textContent = m.locked ? "🔒 " + m.label : m.label;
+    if (m.disabled || m.locked) opt.disabled = true;
     if (opt.value === prev) opt.selected = true;
     sel.appendChild(opt);
     if (!opt.disabled) hasOptions = true;

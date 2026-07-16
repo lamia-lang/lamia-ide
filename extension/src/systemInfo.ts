@@ -49,6 +49,7 @@ export async function collectSystemInfo(): Promise<string> {
   const pythonVersion = getPythonVersion();
   const platform = `${os.platform()} ${os.release()} (${os.arch()})`;
   const workspace = getWorkspaceInfo();
+  const providers = getConfiguredProviders();
   const extensions = getActiveExtensions();
 
   const pinnedVersionFile = path.join(__dirname, "..", "lamia-version.txt");
@@ -66,6 +67,7 @@ export async function collectSystemInfo(): Promise<string> {
     `- **Python**: ${pythonVersion}`,
     `- **OS**: ${platform}`,
     `- **Workspace**: ${workspace}`,
+    `- **Configured Providers**: ${providers.length > 0 ? providers.join(", ") : "none"}`,
     "",
     "**Active Extensions**:",
     `  ${extensions || "none"}`,

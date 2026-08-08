@@ -75,10 +75,9 @@ export class LamiaDebugRuntime extends EventEmitter {
       args.push("--stop-on-entry");
     }
     if (breakpoints) {
-      for (const lines of breakpoints.values()) {
-        for (const line of lines) {
-          args.push("--break", String(line));
-        }
+      const programBreakpoints = breakpoints.get(program) ?? [];
+      for (const line of programBreakpoints) {
+        args.push("--break", String(line));
       }
     }
 

@@ -155,9 +155,7 @@ export class LamiaDebugSession implements vscode.DebugAdapter {
     this._launchProgram = args.program as string;
     this._launchCwd =
       (args.cwd as string) || path.dirname(this._launchProgram);
-    // Keep one consistent behavior across all entry points (file tab command,
-    // debug sidebar, and F5): run to breakpoints instead of stopping at line 1.
-    this._stopOnEntry = false;
+    this._stopOnEntry = (args.stopOnEntry as boolean) ?? false;
     this._respond(msg, {});
   }
 

@@ -62,6 +62,11 @@ export class LamiaDiagnosticsProvider implements vscode.Disposable {
       }),
     );
 
+    const watcher = vscode.workspace.createFileSystemWatcher("**/*.{lm,hu}");
+    watcher.onDidChange((uri) => this._scheduleCheckUri(uri));
+    watcher.onDidCreate((uri) => this._runCheck(uri, uri.fsPath));
+    this._disposables.push(watcher);
+
     for (const doc of vscode.workspace.textDocuments) {
       if (this._isLamiaFile(doc)) {
         this._runCheck(doc.uri, doc.fileName);
@@ -81,19 +86,25 @@ export class LamiaDiagnosticsProvider implements vscode.Disposable {
   }
 
   private _isLamiaFile(doc: vscode.TextDocument): boolean {
-    return doc.uri.fsPath.endsWith(".lm");
+    const p = doc.uri.fsPath;
+    return p.endsWith(".lm") || p.endsWith(".hu");
   }
 
   private _scheduleCheck(doc: vscode.TextDocument): void {
-    const existing = this._timers.get(doc.uri.fsPath);
+    this._scheduleCheckUri(doc.uri);
+  }
+
+  private _scheduleCheckUri(uri: vscode.Uri): void {
+    const key = uri.fsPath;
+    const existing = this._timers.get(key);
     if (existing) {
       clearTimeout(existing);
     }
     this._timers.set(
-      doc.uri.fsPath,
+      key,
       setTimeout(() => {
-        this._timers.delete(doc.uri.fsPath);
-        this._runCheck(doc.uri, doc.fileName);
+        this._timers.delete(key);
+        this._runCheck(uri, uri.fsPath);
       }, DEBOUNCE_MS),
     );
   }

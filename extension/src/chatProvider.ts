@@ -117,12 +117,37 @@ type HostMessage =
 ;
 
 
-const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
+const LAMIA_DOCS_URL = "https://lamia-lang.github.io/lamia/";
+const LAMIA_LLMS_TXT_URL = LAMIA_DOCS_URL + "llms.txt";
+const LAMIA_LLMS_FULL_URL = LAMIA_DOCS_URL + "llms-full.txt";
+
+let _llmsTxtCache: string | null = null;
+
+async function fetchLlmsTxt(): Promise<string> {
+  if (_llmsTxtCache) return _llmsTxtCache;
+  try {
+    const https = await import("https");
+    const text = await new Promise<string>((resolve, reject) => {
+      https.get(LAMIA_LLMS_TXT_URL, { timeout: 8000 }, (res) => {
+        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+        res.on("error", reject);
+      }).on("error", reject);
+    });
+    _llmsTxtCache = text;
+    return text;
+  } catch {
+    return "";
+  }
+}
+
+const SYSTEM_HINT_PREFIX = "You are an assistant in Lamia Studio, an IDE for the Lamia programming language. " +
   "If the user asks for code changes, perform the changes using tools. Do not only propose code. " +
   "When modifying or creating files, ALWAYS use your file tools - never just show code in your response. " +
   "IMPORTANT: When editing existing files, make MINIMAL targeted changes. " +
   "Prefer using .hu files for code changes when possible. Only complicated logic like orchestration changes will be in .lm files. " +
-  "Use your tools to look up the relevant documentation before answering. " +
   "Do not create new files if you can edit existing ones. " +
   "When writing .lm files, use Lamia syntax as much as possible - as few plain Python lines as possible.\n\n" +
   "Do NOT rewrite entire files when only a few lines need changing. " +
@@ -134,7 +159,16 @@ const SYSTEM_HINT = "You are an assistant in Lamia Studio, an IDE for the Lamia 
   "Use your search and file-finding tools when exploring the codebase. " +
   "Use your browser tools for web testing and automation when the user asks to test, verify, or interact with web pages.\n\n" +
   "Before showing Lamia code (.lm or .hu) in chat, run lint_code and fix any errors. " +
-  "If the user asks to present or show code, return it in chat and do not write files unless they explicitly ask for file changes.";
+  "If the user asks to present or show code, return it in chat and do not write files unless they explicitly ask for file changes.\n\n";
+
+function buildSystemHint(llmsTxt: string): string {
+  const docsSection = llmsTxt
+    ? "Here is the Lamia language reference:\n\n" + llmsTxt + "\n"
+    : `Lamia is a scripting language for AI workflows. Reference: ${LAMIA_LLMS_TXT_URL}\n`;
+  return SYSTEM_HINT_PREFIX + docsSection +
+    "For detailed documentation on any topic, use your tools to read files from the docs/ directory in the workspace, " +
+    "or fetch " + LAMIA_LLMS_FULL_URL + " for the complete reference.";
+}
 
 function buildSnippetPrefix(snippets: CopiedSnippet[] | undefined): string {
   if (!snippets || snippets.length === 0) return "";
@@ -224,6 +258,8 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     private readonly _mcpManager?: McpManager,
   ) {
     this._chat = loadLatestChat() || newChat();
+
+    fetchLlmsTxt();
 
     this._context.subscriptions.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => this._refreshModels())
@@ -731,10 +767,12 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
 
           const history = this._buildHistoryForLLM();
 
+          const llmsTxt = await fetchLlmsTxt();
+          const baseHint = buildSystemHint(llmsTxt);
           const mcpToolsHint = this._mcpManager?.getToolDefinitionsForPrompt() || "";
           const systemHint = mcpToolsHint
-            ? SYSTEM_HINT + "\n\n" + mcpToolsHint
-            : SYSTEM_HINT;
+            ? baseHint + "\n\n" + mcpToolsHint
+            : baseHint;
           const response = await proc.send(llmMessage, {
             system: systemHint,
             files,

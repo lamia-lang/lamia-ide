@@ -238,6 +238,14 @@ if [ "${OS}" = "Darwin" ]; then
         plutil -replace CFBundleIdentifier -string "${APP_NAME_BUNDLE_ID}" "${INFO_PLIST}"
         plutil -replace CFBundleIconFile -string "lamia" "${INFO_PLIST}"
     fi
+    # Rename the main app executable so keychain/safe-storage branding is not "VSCodium".
+    OLD_MAIN_EXE="${APP_BUNDLE}/Contents/MacOS/VSCodium"
+    MAIN_EXECUTABLE_NAME="${APP_NAME_COMPACT}"
+    NEW_MAIN_EXE="${APP_BUNDLE}/Contents/MacOS/${MAIN_EXECUTABLE_NAME}"
+    if [ -f "${OLD_MAIN_EXE}" ]; then
+        mv "${OLD_MAIN_EXE}" "${NEW_MAIN_EXE}"
+        [ -f "${INFO_PLIST}" ] && plutil -replace CFBundleExecutable -string "${MAIN_EXECUTABLE_NAME}" "${INFO_PLIST}"
+    fi
     # Rename helper apps to match the new bundle name (Electron finds helpers by directory name)
     for suffix in "" " (GPU)" " (Plugin)" " (Renderer)"; do
         OLD_HELPER="${APP_BUNDLE}/Contents/Frameworks/VSCodium Helper${suffix}.app"

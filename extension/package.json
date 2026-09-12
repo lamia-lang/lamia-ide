@@ -102,6 +102,10 @@
       {
         "command": "lamia.copySystemInfo",
         "title": "Lamia: Copy System Info for Bug Report"
+      },
+      {
+        "command": "lamia.aboutEngine",
+        "title": "Lamia: About Engine Version"
       }
     ],
     "menus": {
@@ -134,6 +138,12 @@
           "command": "lamia.debug",
           "when": "resourceExtname == .lm",
           "group": "navigation"
+        }
+      ],
+      "menubar/help": [
+        {
+          "command": "lamia.aboutEngine",
+          "group": "z_lamia"
         }
       ]
     },

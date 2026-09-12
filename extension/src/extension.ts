@@ -42,6 +42,17 @@ function showLamiaVersionStatus(context: vscode.ExtensionContext): void {
   } catch { /* venv not ready */ }
 }
 
+function showLamiaEngineAbout(): void {
+  const versionFile = path.join(os.homedir(), ".lamia", "venv", ".lamia-ide-version");
+  let version = "not installed";
+  try {
+    version = fs.readFileSync(versionFile, "utf8").trim() || "unknown";
+  } catch {
+    // keep fallback text
+  }
+  vscode.window.showInformationMessage(`Lamia engine version: ${version}`, { modal: true });
+}
+
 function setRunning(running: boolean): void {
   vscode.commands.executeCommand("setContext", "lamia.isRunning", running);
 }
@@ -348,6 +359,12 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(
         "System info copied to clipboard. Paste it into your issue report."
       );
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("lamia.aboutEngine", () => {
+      showLamiaEngineAbout();
     })
   );
 

@@ -75,8 +75,8 @@ if [ -f "${LAMIA_REPO}/pyproject.toml" ] && [ -d "${LAMIA_VENV}" ]; then
     "${LAMIA_VENV}/bin/pip" install -e "${LAMIA_REPO}" --quiet 2>&1 \
         && echo "  OK (editable: ${LAMIA_REPO})" \
         || echo "  Warning: pip install -e failed; engine may be stale"
-    if [ -f "lamia-version.txt" ]; then
-        cp "lamia-version.txt" "${LAMIA_VENV}/.lamia-ide-version" 2>/dev/null || true
+    if [ -f "initial-lamia-version.txt" ]; then
+        cp "initial-lamia-version.txt" "${LAMIA_VENV}/.lamia-ide-version" 2>/dev/null || true
     fi
     find "${LAMIA_REPO}/lamia" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 elif [ -d "${LAMIA_VENV}" ]; then
@@ -115,7 +115,7 @@ cp    extension/lamia.code-snippets   "${LAMIA_EXT_DIR}/lamia.code-snippets"
 cp    extension/language-configuration-lm.json "${LAMIA_EXT_DIR}/language-configuration-lm.json"
 cp    extension/language-configuration-hu.json "${LAMIA_EXT_DIR}/language-configuration-hu.json"
 cp    models.json                              "${LAMIA_EXT_DIR}/models.json"
-cp    lamia-version.txt                        "${LAMIA_EXT_DIR}/lamia-version.txt"
+cp    initial-lamia-version.txt                 "${LAMIA_EXT_DIR}/initial-lamia-version.txt"
 
 # Register extension and clear any obsolete markers
 rm -f "${USER_EXT_BASE}/.obsolete"

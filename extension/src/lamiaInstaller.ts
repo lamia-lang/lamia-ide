@@ -14,7 +14,7 @@ let _installPromise: Promise<string> | null = null;
 let _pythonAvailable: boolean | null = null;
 
 function bundledVersionFile(): string {
-  return path.join(__dirname, "..", "lamia-version.txt");
+  return path.join(__dirname, "..", "initial-lamia-version.txt");
 }
 
 function readPinnedVersion(): string {

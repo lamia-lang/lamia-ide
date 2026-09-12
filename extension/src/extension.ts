@@ -1,4 +1,6 @@
 import * as path from "path";
+import * as fs from "fs";
+import * as os from "os";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import * as vscode from "vscode";
 import { LamiaChatProvider } from "./chatProvider";
@@ -26,6 +28,19 @@ import { McpManager } from "./mcpManager";
 let _chatProvider: LamiaChatProvider | undefined;
 let _mcpManager: McpManager | undefined;
 let _runningExecution: vscode.TaskExecution | undefined;
+
+function showLamiaVersionStatus(context: vscode.ExtensionContext): void {
+  const versionFile = path.join(os.homedir(), ".lamia", "venv", ".lamia-ide-version");
+  try {
+    const version = fs.readFileSync(versionFile, "utf8").trim();
+    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
+    item.text = `Lamia ${version}`;
+    item.tooltip = "Lamia engine version (click to copy system info)";
+    item.command = "lamia.copySystemInfo";
+    item.show();
+    context.subscriptions.push(item);
+  } catch { /* venv not ready */ }
+}
 
 function setRunning(running: boolean): void {
   vscode.commands.executeCommand("setContext", "lamia.isRunning", running);
@@ -94,6 +109,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   if (isLamiaReady()) {
     checkForUpdate(context).catch(() => {});
+    showLamiaVersionStatus(context);
   } else if (isPythonAvailable()) {
     ensureLamia().catch(() => {});
   } else {

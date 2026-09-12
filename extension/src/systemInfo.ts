@@ -52,7 +52,7 @@ export async function collectSystemInfo(): Promise<string> {
   const providers = getConfiguredProviders();
   const extensions = getActiveExtensions();
 
-  const pinnedVersionFile = path.join(__dirname, "..", "lamia-version.txt");
+  const pinnedVersionFile = path.join(__dirname, "..", "initial-lamia-version.txt");
   let pinnedVersion = "unknown";
   try {
     pinnedVersion = fs.readFileSync(pinnedVersionFile, "utf8").trim();

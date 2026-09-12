@@ -8,17 +8,12 @@ import { execFile } from "child_process";
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
 const VENV_DIR = path.join(LAMIA_HOME, "venv");
 const VENV_BIN = path.join(VENV_DIR, process.platform === "win32" ? "Scripts" : "bin");
-const VENV_PIP = path.join(VENV_BIN, process.platform === "win32" ? "pip.exe" : "pip");
 const VENV_LAMIA = path.join(VENV_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
 const STAGING_DIR = path.join(LAMIA_HOME, "update-staging");
 const STAGING_BIN = path.join(STAGING_DIR, process.platform === "win32" ? "Scripts" : "bin");
 const STAGING_PIP = path.join(STAGING_BIN, process.platform === "win32" ? "pip.exe" : "pip");
 const STAGING_LAMIA = path.join(STAGING_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
 const PYPI_URL = "https://pypi.org/pypi/lamia-lang/json";
-
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const LAST_CHECK_KEY = "lamia.updateCheck.lastTimestamp";
-const SKIPPED_VERSION_KEY = "lamia.updateCheck.skippedVersion";
 
 const IDE_SUPPORTED_API_MAJOR = 0;
 
@@ -101,10 +96,10 @@ function removeStagingVenv(): void {
   } catch { /* best effort */ }
 }
 
-function installInStaging(version: string): Promise<void> {
+function pipInstall(pip: string, version: string): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(
-      STAGING_PIP,
+      pip,
       ["install", `lamia-lang==${version}`],
       { timeout: 180000, maxBuffer: 5 * 1024 * 1024 },
       (err) => {
@@ -115,16 +110,26 @@ function installInStaging(version: string): Promise<void> {
   });
 }
 
-function getStagingIdeApi(): Promise<{ major: number; minor: number } | null> {
+/** Extract the last JSON object line from output (ignores stray pip/Python warnings). */
+function lastJsonLine(out: string): string {
+  const line = out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("{") && l.endsWith("}"))
+    .pop();
+  return line ?? out.trim();
+}
+
+function getIdeApi(lamiaBin: string): Promise<{ major: number; minor: number } | null> {
   return new Promise((resolve) => {
     execFile(
-      STAGING_LAMIA,
+      lamiaBin,
       ["--version", "--json"],
       { timeout: 10000 },
       (err, stdout) => {
         if (err) { resolve(null); return; }
         try {
-          const data = JSON.parse(stdout.trim());
+          const data = JSON.parse(lastJsonLine(stdout));
           const parts = (data.ide_api as string).split(".").map(Number);
           resolve({ major: parts[0] ?? 0, minor: parts[1] ?? 0 });
         } catch {
@@ -135,24 +140,21 @@ function getStagingIdeApi(): Promise<{ major: number; minor: number } | null> {
   });
 }
 
-function getLiveIdeApi(): Promise<{ major: number; minor: number } | null> {
-  return new Promise((resolve) => {
-    execFile(
-      VENV_LAMIA,
-      ["--version", "--json"],
-      { timeout: 10000 },
-      (err, stdout) => {
-        if (err) { resolve(null); return; }
-        try {
-          const data = JSON.parse(stdout.trim());
-          const parts = (data.ide_api as string).split(".").map(Number);
-          resolve({ major: parts[0] ?? 0, minor: parts[1] ?? 0 });
-        } catch {
-          resolve(null);
+/** After renaming staging → venv, fix hardcoded interpreter paths in scripts. */
+function fixShebangs(): void {
+  try {
+    const files = fs.readdirSync(VENV_BIN);
+    for (const file of files) {
+      const filePath = path.join(VENV_BIN, file);
+      if (!fs.statSync(filePath).isFile()) continue;
+      try {
+        const content = fs.readFileSync(filePath, "utf8");
+        if (content.startsWith("#!") && content.includes(STAGING_DIR)) {
+          fs.writeFileSync(filePath, content.split(STAGING_DIR).join(VENV_DIR), "utf8");
         }
-      },
-    );
-  });
+      } catch { /* skip binary files */ }
+    }
+  } catch { /* best effort */ }
 }
 
 function promoteStaging(): void {
@@ -160,12 +162,10 @@ function promoteStaging(): void {
     fs.rmSync(VENV_DIR, { recursive: true, force: true });
   }
   fs.renameSync(STAGING_DIR, VENV_DIR);
+  fixShebangs();
 }
 
-export async function checkForUpdate(context: vscode.ExtensionContext): Promise<void> {
-  const lastCheck = context.globalState.get<number>(LAST_CHECK_KEY, 0);
-  if (Date.now() - lastCheck < CHECK_INTERVAL_MS) return;
-
+export async function checkForUpdate(_context: vscode.ExtensionContext): Promise<void> {
   const installed = getInstalledVersion();
   if (!installed) return;
 
@@ -176,76 +176,50 @@ export async function checkForUpdate(context: vscode.ExtensionContext): Promise<
     return;
   }
 
-  await context.globalState.update(LAST_CHECK_KEY, Date.now());
-
   if (compareVersions(latest, installed) <= 0) return;
 
-  // Don't re-ask about a version the user already skipped
-  const skipped = context.globalState.get<string>(SKIPPED_VERSION_KEY, "");
-  if (skipped === latest) return;
-
-  const choice = await vscode.window.showInformationMessage(
-    `A new version of Lamia is available: ${latest} (installed: ${installed}).`,
-    "Update Now",
-    "Later",
-  );
-
-  if (choice !== "Update Now") {
-    await context.globalState.update(SKIPPED_VERSION_KEY, latest);
-    return;
-  }
-
-  const currentApi = await getLiveIdeApi();
-
-  // Install in isolated staging venv, verify compatibility, then swap
+  // Silently create a staging venv, install, and validate IDE compatibility.
+  const currentApi = await getIdeApi(VENV_LAMIA);
   let newApi: { major: number; minor: number } | null;
 
   try {
-    newApi = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Downloading Lamia ${latest}…`,
-        cancellable: false,
-      },
-      async () => {
-        await createStagingVenv();
-        await installInStaging(latest);
-        return getStagingIdeApi();
-      },
-    );
+    await createStagingVenv();
+    await pipInstall(STAGING_PIP, latest);
+    newApi = await getIdeApi(STAGING_LAMIA);
   } catch {
     removeStagingVenv();
-    vscode.window.showErrorMessage(`Failed to download Lamia ${latest}.`);
     return;
   }
 
-  // Unknown API version must be treated as incompatible for safety.
   if (!newApi) {
     removeStagingVenv();
-    vscode.window.showWarningMessage(
-      `Lamia ${latest} could not be validated for IDE compatibility. Update was not applied.`,
-    );
     return;
   }
 
-  // Check compatibility before touching the live environment
   if (newApi.major > IDE_SUPPORTED_API_MAJOR) {
     removeStagingVenv();
     vscode.window.showWarningMessage(
       `Lamia ${latest} requires a newer IDE version. Please update the Lamia IDE extension first.`,
     );
-    // Don't ask again for this incompatible version
-    await context.globalState.update(SKIPPED_VERSION_KEY, latest);
     return;
   }
 
-  // Safe — swap staging into live
+  // Compatible — ask the user.
+  const choice = await vscode.window.showInformationMessage(
+    `Lamia ${latest} is ready to install (current: ${installed}).`,
+    { modal: true },
+    "Update Now",
+  );
+
+  if (choice !== "Update Now") {
+    removeStagingVenv();
+    return;
+  }
+
+  // Swap staging venv into live position and fix interpreter paths.
   promoteStaging();
   const versionFile = path.join(VENV_DIR, ".lamia-ide-version");
   fs.writeFileSync(versionFile, latest, "utf8");
-
-  // Clear skipped version since we successfully updated
-  await context.globalState.update(SKIPPED_VERSION_KEY, "");
 
   if (currentApi && newApi.minor > currentApi.minor) {
     vscode.window.showInformationMessage(

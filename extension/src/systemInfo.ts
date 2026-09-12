@@ -8,6 +8,7 @@ import { getConfiguredProviders } from "./envHelper";
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
 const VENV_BIN = path.join(LAMIA_HOME, "venv", process.platform === "win32" ? "Scripts" : "bin");
 const VENV_LAMIA = path.join(VENV_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
+const LOCAL_EDITABLE_MARKER = path.join(LAMIA_HOME, "venv", ".lamia-ide-local-editable");
 
 function safeExec(cmd: string, args: string[]): string {
   try {
@@ -53,17 +54,19 @@ export async function collectSystemInfo(): Promise<string> {
   const extensions = getActiveExtensions();
 
   const pinnedVersionFile = path.join(__dirname, "..", "initial-lamia-version.txt");
-  let pinnedVersion = "unknown";
+  let initialVersion = "unknown";
   try {
-    pinnedVersion = fs.readFileSync(pinnedVersionFile, "utf8").trim();
+    initialVersion = fs.readFileSync(pinnedVersionFile, "utf8").trim();
   } catch {}
+  const localEditable = fs.existsSync(LOCAL_EDITABLE_MARKER);
 
   return [
     "## Lamia Studio System Info",
     "",
     `- **IDE Version**: ${ideVersion}`,
     `- **Lamia CLI Version**: ${lamiaVersion}`,
-    `- **Lamia Pinned Version**: ${pinnedVersion}`,
+    `- **Lamia Install Mode**: ${localEditable ? "local editable source" : "bundled/pinned"}`,
+    `- **Lamia Initial Version File**: ${initialVersion}`,
     `- **Python**: ${pythonVersion}`,
     `- **OS**: ${platform}`,
     `- **Workspace**: ${workspace}`,

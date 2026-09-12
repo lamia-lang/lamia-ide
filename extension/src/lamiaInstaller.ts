@@ -9,6 +9,7 @@ const VENV_DIR = path.join(LAMIA_HOME, "venv");
 const VENV_BIN = path.join(VENV_DIR, process.platform === "win32" ? "Scripts" : "bin");
 const VENV_LAMIA = path.join(VENV_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
 const VERSION_FILE = path.join(VENV_DIR, ".lamia-ide-version");
+const LOCAL_EDITABLE_MARKER = path.join(VENV_DIR, ".lamia-ide-local-editable");
 
 let _installPromise: Promise<string> | null = null;
 let _pythonAvailable: boolean | null = null;
@@ -67,7 +68,8 @@ export function isPythonAvailable(): boolean {
 export function isLamiaReady(): boolean {
   const pinnedVersion = readPinnedVersion();
   const installedVersion = readInstalledVersion();
-  return fs.existsSync(VENV_LAMIA) && installedVersion === pinnedVersion;
+  const localEditable = fs.existsSync(LOCAL_EDITABLE_MARKER);
+  return fs.existsSync(VENV_LAMIA) && (localEditable || installedVersion === pinnedVersion);
 }
 
 const PYTHON_DOWNLOAD_URL = "https://www.python.org/downloads/";
@@ -98,8 +100,9 @@ export function ensureLamia(): Promise<string> {
 async function _doInstall(): Promise<string> {
   const pinnedVersion = readPinnedVersion();
   const installedVersion = readInstalledVersion();
+  const localEditable = fs.existsSync(LOCAL_EDITABLE_MARKER);
 
-  if (fs.existsSync(VENV_LAMIA) && installedVersion === pinnedVersion) {
+  if (fs.existsSync(VENV_LAMIA) && (localEditable || installedVersion === pinnedVersion)) {
     return VENV_LAMIA;
   }
 
@@ -129,6 +132,9 @@ async function _doInstall(): Promise<string> {
       ]);
 
       fs.writeFileSync(VERSION_FILE, pinnedVersion, "utf8");
+      if (fs.existsSync(LOCAL_EDITABLE_MARKER)) {
+        fs.rmSync(LOCAL_EDITABLE_MARKER, { force: true });
+      }
     }
   );
 

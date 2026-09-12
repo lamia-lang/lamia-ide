@@ -9,6 +9,7 @@ const LAMIA_HOME = path.join(os.homedir(), ".lamia");
 const VENV_DIR = path.join(LAMIA_HOME, "venv");
 const VENV_BIN = path.join(VENV_DIR, process.platform === "win32" ? "Scripts" : "bin");
 const VENV_LAMIA = path.join(VENV_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
+const LOCAL_EDITABLE_MARKER = path.join(VENV_DIR, ".lamia-ide-local-editable");
 const STAGING_DIR = path.join(LAMIA_HOME, "update-staging");
 const STAGING_BIN = path.join(STAGING_DIR, process.platform === "win32" ? "Scripts" : "bin");
 const STAGING_PIP = path.join(STAGING_BIN, process.platform === "win32" ? "pip.exe" : "pip");
@@ -166,6 +167,8 @@ function promoteStaging(): void {
 }
 
 export async function checkForUpdate(_context: vscode.ExtensionContext): Promise<void> {
+  if (fs.existsSync(LOCAL_EDITABLE_MARKER)) return;
+
   const installed = getInstalledVersion();
   if (!installed) return;
 

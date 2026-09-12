@@ -69,14 +69,22 @@ fi
 # Always use the sibling lamia repo so dev.sh runs latest uncommitted code.
 LAMIA_REPO="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/lamia"
 LAMIA_VENV="${HOME}/.lamia/venv"
+LAMIA_VERSION_FILE="${LAMIA_VENV}/.lamia-ide-version"
+LAMIA_LOCAL_EDITABLE_MARKER="${LAMIA_VENV}/.lamia-ide-local-editable"
 
 if [ -f "${LAMIA_REPO}/pyproject.toml" ] && [ -d "${LAMIA_VENV}" ]; then
     echo "Syncing lamia engine from local source..."
-    "${LAMIA_VENV}/bin/pip" install -e "${LAMIA_REPO}" --quiet 2>&1 \
-        && echo "  OK (editable: ${LAMIA_REPO})" \
-        || echo "  Warning: pip install -e failed; engine may be stale"
-    if [ -f "initial-lamia-version.txt" ]; then
-        cp "initial-lamia-version.txt" "${LAMIA_VENV}/.lamia-ide-version" 2>/dev/null || true
+    if "${LAMIA_VENV}/bin/pip" install -e "${LAMIA_REPO}" --quiet 2>&1; then
+        echo "  OK (editable: ${LAMIA_REPO})"
+        LOCAL_LAMIA_VERSION="$("${LAMIA_VENV}/bin/lamia" --version --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
+        if [ -n "${LOCAL_LAMIA_VERSION}" ]; then
+            printf '%s\n' "${LOCAL_LAMIA_VERSION}" > "${LAMIA_VERSION_FILE}"
+        elif [ -f "initial-lamia-version.txt" ]; then
+            cp "initial-lamia-version.txt" "${LAMIA_VERSION_FILE}" 2>/dev/null || true
+        fi
+        touch "${LAMIA_LOCAL_EDITABLE_MARKER}"
+    else
+        echo "  Warning: pip install -e failed; engine may be stale"
     fi
     find "${LAMIA_REPO}/lamia" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 elif [ -d "${LAMIA_VENV}" ]; then

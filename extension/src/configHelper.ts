@@ -23,7 +23,7 @@ export interface SubProjectInfo {
 }
 
 type LamiaModelsOutput = Record<string, string[]>;
-const NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic", "ollama"]);
+const NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic", "openrouter", "ollama"]);
 const PRIMARY_NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic"]);
 const MAX_DEFAULT_MODELS = 12;
 const MODEL_SEPARATOR: ModelOption = { value: "__separator__", label: "────────────────", disabled: true };
@@ -264,24 +264,32 @@ let _cachedFallbackModels: ModelList | undefined;
 export async function fetchFallbackModels(): Promise<ModelList> {
   if (_cachedFallbackModels) return _cachedFallbackModels;
 
+  let bundledModels: ModelList | undefined;
+  try {
+    const bundled = path.join(__dirname, "..", "models.json");
+    bundledModels = JSON.parse(fs.readFileSync(bundled, "utf8")) as ModelList;
+  } catch {}
+
   try {
     const res = await fetch(MODELS_URL);
     if (res.ok) {
-      _cachedFallbackModels = (await res.json()) as ModelList;
+      const remoteModels = (await res.json()) as ModelList;
+      // Prefer local (dev) catalog first, then fill/override with remote entries.
+      // This keeps newly added local providers/models visible before they are pushed.
+      _cachedFallbackModels = bundledModels ? { ...bundledModels, ...remoteModels } : remoteModels;
       return _cachedFallbackModels;
     }
   } catch {}
 
-  try {
-    const bundled = path.join(__dirname, "..", "models.json");
-    _cachedFallbackModels = JSON.parse(fs.readFileSync(bundled, "utf8")) as ModelList;
+  if (bundledModels) {
+    _cachedFallbackModels = bundledModels;
     return _cachedFallbackModels;
-  } catch {
-    return {
-      anthropic: [{ id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" }],
-      openai: [{ id: "gpt-4o", label: "GPT-4o" }],
-    };
   }
+
+  return {
+    anthropic: [{ id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" }],
+    openai: [{ id: "gpt-4o", label: "GPT-4o" }],
+  };
 }
 
 export async function fetchRuntimeProviderModels(configPath?: string): Promise<LamiaModelsOutput> {
@@ -307,6 +315,8 @@ export async function fetchRuntimeProviderModels(configPath?: string): Promise<L
   if (openaiKey) env.OPENAI_API_KEY = openaiKey;
   const anthropicKey = getApiKey("anthropic");
   if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
+  const openrouterKey = getApiKey("openrouter");
+  if (openrouterKey) env.OPENROUTER_API_KEY = openrouterKey;
 
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
@@ -384,19 +394,23 @@ export function buildModelDropdown(
   // zero runtime models (API momentarily unreachable).  Never show models
   // for providers without a key — they won't work.
   for (const [provider, models] of Object.entries(fallbackModels)) {
-    if (!configuredProviders.includes(provider)) continue;
+    const allowWithoutKey = provider === "openrouter";
+    if (!configuredProviders.includes(provider) && !allowWithoutKey) continue;
     const hasRuntimeModels = (providerModels[provider] || []).length > 0;
     if (hasRuntimeModels) continue;
     for (const model of models) {
+      if (provider === "openrouter" && !configuredProviders.includes("openrouter") && !model.id.endsWith(":free")) {
+        continue;
+      }
       addModel(model.id, provider);
     }
   }
 
   // Show locked models for providers without a configured key
   for (const [provider, models] of Object.entries(fallbackModels)) {
-    if (provider === "openrouter") continue;
     if (configuredProviders.includes(provider)) continue;
     for (const model of models) {
+      if (provider === "openrouter" && model.id.endsWith(":free")) continue;
       const fullModel = ensureProviderPrefix(model.id, provider);
       if (!fullModel) continue;
       const key = normalizeModelKey(fullModel);
@@ -495,14 +509,26 @@ function isCustomProvider(provider: string): boolean {
 }
 
 function pickDefaultModels(allItems: ModelOption[]): ModelOption[] {
+  // Always include unlocked openrouter free models in the default set
+  const freeOpenrouter = allItems.filter((item) =>
+    item.provider === "openrouter" && !item.locked && item.value.endsWith(":free")
+  );
   const popular = allItems.filter((item) => {
     const provider = item.provider || "";
     return PRIMARY_NATIVE_PROVIDERS.has(provider);
   });
   if (popular.length > 0) {
-    return popular.slice(0, MAX_DEFAULT_MODELS);
+    const combined = [...popular.slice(0, MAX_DEFAULT_MODELS)];
+    for (const fr of freeOpenrouter) {
+      if (!combined.some((c) => c.value === fr.value)) combined.push(fr);
+    }
+    return combined;
   }
-  return allItems.filter((item) => (item.provider || "") !== "ollama").slice(0, MAX_DEFAULT_MODELS);
+  const base = allItems.filter((item) => (item.provider || "") !== "ollama").slice(0, MAX_DEFAULT_MODELS);
+  for (const fr of freeOpenrouter) {
+    if (!base.some((c) => c.value === fr.value)) base.push(fr);
+  }
+  return base;
 }
 
 function joinWithSeparator(top: ModelOption[], rest: ModelOption[]): ModelOption[] {

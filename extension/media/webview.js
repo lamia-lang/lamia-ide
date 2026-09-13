@@ -83,7 +83,7 @@ var keyValidationStatus = {};
 function updateSetupStatus() {
   var el = document.getElementById("setup-status");
   var lines = [];
-  var providers = ["anthropic", "openai"];
+  var providers = ["anthropic", "openai", "openrouter"];
   for (var pi = 0; pi < providers.length; pi++) {
     var p = providers[pi];
     var label = p.charAt(0).toUpperCase() + p.slice(1);

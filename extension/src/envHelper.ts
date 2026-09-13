@@ -8,6 +8,7 @@ const ENV_FILE = path.join(LAMIA_DIR, ".env");
 const PROVIDER_KEY_MAP: Record<string, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
 };
 
 function parseEnvFile(content: string): Record<string, string> {
@@ -113,6 +114,10 @@ const VALIDATION_ENDPOINTS: Record<string, { url: string; headers: (key: string)
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     }),
+  },
+  openrouter: {
+    url: "https://openrouter.ai/api/v1/auth/key",
+    headers: (key) => ({ "Authorization": `Bearer ${key}` }),
   },
 };
 

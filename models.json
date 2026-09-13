@@ -17,5 +17,14 @@
     { "id": "o3", "label": "o3" },
     { "id": "o3-mini", "label": "o3-mini" },
     { "id": "o4-mini", "label": "o4-mini" }
+  ],
+  "openrouter": [
+    { "id": "cohere/north-mini-code:free", "label": "Cohere North Mini Code (free)" },
+    { "id": "google/gemma-4-31b-it:free", "label": "Gemma 4 31B (free)" },
+    { "id": "nvidia/nemotron-3.5-lightning:free", "label": "Nemotron 3.5 Lightning (free)" },
+    { "id": "thinkingmachines/inkling:free", "label": "Thinking Machines Inkling (free)" },
+    { "id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B" },
+    { "id": "google/gemini-2.5-flash-preview", "label": "Gemini 2.5 Flash" },
+    { "id": "deepseek/deepseek-chat-v3", "label": "DeepSeek V3" }
   ]
 }

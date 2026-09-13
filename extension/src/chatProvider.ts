@@ -1661,6 +1661,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       <select id="setup-provider">
         <option value="anthropic">Anthropic</option>
         <option value="openai">OpenAI</option>
+        <option value="openrouter">OpenRouter</option>
       </select>
     </div>
     <div class="setup-row">

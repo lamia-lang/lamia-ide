@@ -72,6 +72,7 @@ export class LamiaProcess {
     const keyMap: Record<string, string> = {
       anthropic: "ANTHROPIC_API_KEY",
       openai: "OPENAI_API_KEY",
+      openrouter: "OPENROUTER_API_KEY",
     };
     for (const [provider, envKey] of Object.entries(keyMap)) {
       const key = getApiKey(provider);

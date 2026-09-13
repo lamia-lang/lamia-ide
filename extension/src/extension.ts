@@ -30,7 +30,7 @@ let _mcpManager: McpManager | undefined;
 let _runningExecution: vscode.TaskExecution | undefined;
 
 function showLamiaVersionStatus(context: vscode.ExtensionContext): void {
-  const versionFile = path.join(os.homedir(), ".lamia", "venv", ".lamia-ide-version");
+  const versionFile = path.join(os.homedir(), ".lamia", "lamia-ide-venv", ".lamia-ide-version");
   try {
     const version = fs.readFileSync(versionFile, "utf8").trim();
     const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
@@ -43,7 +43,7 @@ function showLamiaVersionStatus(context: vscode.ExtensionContext): void {
 }
 
 function showLamiaEngineAbout(): void {
-  const versionFile = path.join(os.homedir(), ".lamia", "venv", ".lamia-ide-version");
+  const versionFile = path.join(os.homedir(), ".lamia", "lamia-ide-venv", ".lamia-ide-version");
   let version = "not installed";
   try {
     version = fs.readFileSync(versionFile, "utf8").trim() || "unknown";

@@ -68,7 +68,7 @@ fi
 # ── Sync lamia engine from local source ───────────────────────────────────────
 # Always use the sibling lamia repo so dev.sh runs latest uncommitted code.
 LAMIA_REPO="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/lamia"
-LAMIA_VENV="${HOME}/.lamia/venv"
+LAMIA_VENV="${HOME}/.lamia/lamia-ide-venv"
 LAMIA_VERSION_FILE="${LAMIA_VENV}/.lamia-ide-version"
 LAMIA_LOCAL_EDITABLE_MARKER="${LAMIA_VENV}/.lamia-ide-local-editable"
 

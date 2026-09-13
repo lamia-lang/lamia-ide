@@ -6,9 +6,9 @@ import { execFileSync } from "child_process";
 import { getConfiguredProviders } from "./envHelper";
 
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
-const VENV_BIN = path.join(LAMIA_HOME, "venv", process.platform === "win32" ? "Scripts" : "bin");
+const VENV_BIN = path.join(LAMIA_HOME, "lamia-ide-venv", process.platform === "win32" ? "Scripts" : "bin");
 const VENV_LAMIA = path.join(VENV_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
-const LOCAL_EDITABLE_MARKER = path.join(LAMIA_HOME, "venv", ".lamia-ide-local-editable");
+const LOCAL_EDITABLE_MARKER = path.join(LAMIA_HOME, "lamia-ide-venv", ".lamia-ide-local-editable");
 
 function safeExec(cmd: string, args: string[]): string {
   try {

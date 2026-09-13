@@ -62,12 +62,12 @@ export class LamiaDebugRuntime extends EventEmitter {
     const venvBin = path.join(
       os.homedir(),
       ".lamia",
-      "venv",
+      "lamia-ide-venv",
       process.platform === "win32" ? "Scripts" : "bin",
     );
     if (fs.existsSync(venvBin)) {
       env.PATH = `${venvBin}${path.delimiter}${env.PATH ?? ""}`;
-      env.VIRTUAL_ENV = path.join(os.homedir(), ".lamia", "venv");
+      env.VIRTUAL_ENV = path.join(os.homedir(), ".lamia", "lamia-ide-venv");
     }
 
     const args = ["debug", program, "--json"];
@@ -260,7 +260,7 @@ export class LamiaDebugRuntime extends EventEmitter {
 /**
  * Find the `lamia` CLI executable.
  * Strategy:
- *  1. Check ~/.lamia/venv/bin/lamia
+ *  1. Check ~/.lamia/lamia-ide-venv/bin/lamia
  *  2. Check PATH via `which lamia`
  *  3. Fall back to bare "lamia" (let the OS resolve it)
  *
@@ -270,7 +270,7 @@ export function resolveLamiaCli(): string {
   const venvLamia = path.join(
     os.homedir(),
     ".lamia",
-    "venv",
+    "lamia-ide-venv",
     process.platform === "win32" ? "Scripts" : "bin",
     process.platform === "win32" ? "lamia.exe" : "lamia",
   );

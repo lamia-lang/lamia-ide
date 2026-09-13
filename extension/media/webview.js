@@ -353,6 +353,7 @@ function populateModels(serverSelectedModel) {
     const opt = document.createElement("option");
     opt.value = m.value;
     opt.textContent = m.locked ? "🔒 " + m.label : m.label;
+    opt.title = m.label;
     if (m.disabled || m.locked) opt.disabled = true;
     if (opt.value === prev) opt.selected = true;
     sel.appendChild(opt);
@@ -379,6 +380,9 @@ function populateModels(serverSelectedModel) {
     addOpt.textContent = "Add Models…";
     sel.appendChild(addOpt);
   }
+
+  const selected = sel.options[sel.selectedIndex];
+  sel.title = selected ? selected.title || selected.textContent : "";
 }
 
 function openAddModelsDialog() {
@@ -394,6 +398,7 @@ function openAddModelsDialog() {
     row.className = "add-model-row";
     if (m.value === currentModel) row.classList.add("selected");
     row.textContent = m.label;
+    row.title = m.label;
     row.addEventListener("click", function () {
       selectModelFromDialog(m.value);
     });
@@ -748,6 +753,8 @@ function onModelChange() {
     vscodeApi.postMessage({ type: "changeModel", model });
     vscodeApi.setState({ selectedModel: model });
   }
+  const selected = sel?.options[sel.selectedIndex];
+  sel.title = selected ? selected.title || selected.textContent : "";
 }
 
 // ── File chips (attached files) ───────────────────────────────────────────────

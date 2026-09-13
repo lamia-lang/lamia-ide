@@ -7,3 +7,4 @@ extension/node_modules/
 .vscode/
 extension/vitest.config.js
 extension/vitest.config.js.map
+.lamia/

@@ -5,7 +5,7 @@ import * as fs from "fs";
 import { execFile, execFileSync } from "child_process";
 
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
-const VENV_DIR = path.join(LAMIA_HOME, "venv");
+const VENV_DIR = path.join(LAMIA_HOME, "lamia-ide-venv");
 const VENV_BIN = path.join(VENV_DIR, process.platform === "win32" ? "Scripts" : "bin");
 const VENV_LAMIA = path.join(VENV_BIN, process.platform === "win32" ? "lamia.exe" : "lamia");
 const VERSION_FILE = path.join(VENV_DIR, ".lamia-ide-version");
@@ -155,7 +155,7 @@ function showPathHint(): void {
   if (_pathHintShown) return;
   _pathHintShown = true;
 
-  const shellLine = `export PATH="$HOME/.lamia/venv/bin:$PATH"`;
+  const shellLine = `export PATH="$HOME/.lamia/lamia-ide-venv/bin:$PATH"`;
   vscode.window.showInformationMessage(
     `Lamia runtime ready. To use "lamia" from your terminal, add to your shell profile:\n${shellLine}`,
     "Copy to Clipboard"

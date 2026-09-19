@@ -46,3 +46,24 @@ rm -f ~/.lamia/lamia-ide-venv/.lamia-ide-local-editable
 echo "0.2.0" > ~/.lamia/lamia-ide-venv/.lamia-ide-version
 ```
 Then relaunch Lamia Studio. The checker will see `installed=0.2.0`, `latest=0.2.2` (from PyPI), and offer the update.
+
+## Adding LLM Providers to the IDE
+
+The IDE delegates all LLM calls to the `lamia` Python CLI — it never makes API calls directly. Adding a provider requires changes in both repos:
+
+**In `lamia` (Python side):**
+- Create a `BaseLLMAdapter` subclass in `lamia/adapters/llm/`
+- Register it in `_BUILTIN_ADAPTERS` in `lamia/engine/managers/llm/providers.py`
+
+**In `lamia-ide` (TypeScript side):**
+- Add an entry to `PROVIDERS` in `extension/src/providerRegistry.ts` — this is the **single source of truth** for provider config (env var, label, validation endpoint, native/primary flags). All other modules derive from it automatically.
+- Add fallback models to `models.json`
+
+Currently supported: **Anthropic**, **OpenAI**, **OpenRouter** (free proxy + BYOK), **Ollama** (local).
+
+### OpenRouter modes in IDE
+
+OpenRouter has two modes:
+
+- **No key (free proxy):** Requests go through the Lamia proxy (`LAMIA_OPENROUTER_PROXY_URL`) using a shared key. Only `:free` models are allowed; per-IP rate limits apply. Analytics are logged.
+- **BYOK:** Requests also go through the proxy (for analytics), but the user's own key is forwarded. Any model is allowed; no rate limiting. User API keys are forwarded but **never stored**.

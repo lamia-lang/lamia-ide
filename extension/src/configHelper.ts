@@ -5,6 +5,13 @@ import { execFile } from "child_process";
 import * as vscode from "vscode";
 import { getApiKey, getConfiguredProviders } from "./envHelper";
 import { LamiaProcess } from "./lamiaProcess";
+import {
+  OPENROUTER_PROXY_API_URL,
+  PROVIDER_KEY_MAP,
+  PROVIDERS,
+  PRIMARY_PROVIDERS,
+} from "./providerRegistry";
+import { getDeviceToken } from "./deviceId";
 
 const LAMIA_HOME = path.join(os.homedir(), ".lamia");
 
@@ -23,8 +30,6 @@ export interface SubProjectInfo {
 }
 
 type LamiaModelsOutput = Record<string, string[]>;
-const NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic", "openrouter", "ollama"]);
-const PRIMARY_NATIVE_PROVIDERS = new Set<string>(["openai", "anthropic"]);
 const MAX_DEFAULT_MODELS = 12;
 const MODEL_SEPARATOR: ModelOption = { value: "__separator__", label: "────────────────", disabled: true };
 
@@ -311,12 +316,14 @@ export async function fetchRuntimeProviderModels(configPath?: string): Promise<L
     Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
   );
 
-  const openaiKey = getApiKey("openai");
-  if (openaiKey) env.OPENAI_API_KEY = openaiKey;
-  const anthropicKey = getApiKey("anthropic");
-  if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
-  const openrouterKey = getApiKey("openrouter");
-  if (openrouterKey) env.OPENROUTER_API_KEY = openrouterKey;
+  for (const [provider, envKey] of Object.entries(PROVIDER_KEY_MAP)) {
+    const key = getApiKey(provider);
+    if (key) env[envKey] = key;
+  }
+  if (!env.OPENROUTER_API_KEY) {
+    env.OPENROUTER_API_KEY = getDeviceToken();
+  }
+  env.OPENROUTER_API_URL = OPENROUTER_PROXY_API_URL;
 
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
@@ -394,14 +401,10 @@ export function buildModelDropdown(
   // zero runtime models (API momentarily unreachable).  Never show models
   // for providers without a key — they won't work.
   for (const [provider, models] of Object.entries(fallbackModels)) {
-    const allowWithoutKey = provider === "openrouter";
-    if (!configuredProviders.includes(provider) && !allowWithoutKey) continue;
+    if (!configuredProviders.includes(provider)) continue;
     const hasRuntimeModels = (providerModels[provider] || []).length > 0;
     if (hasRuntimeModels) continue;
     for (const model of models) {
-      if (provider === "openrouter" && !configuredProviders.includes("openrouter") && !model.id.endsWith(":free")) {
-        continue;
-      }
       addModel(model.id, provider);
     }
   }
@@ -410,7 +413,6 @@ export function buildModelDropdown(
   for (const [provider, models] of Object.entries(fallbackModels)) {
     if (configuredProviders.includes(provider)) continue;
     for (const model of models) {
-      if (provider === "openrouter" && model.id.endsWith(":free")) continue;
       const fullModel = ensureProviderPrefix(model.id, provider);
       if (!fullModel) continue;
       const key = normalizeModelKey(fullModel);
@@ -499,36 +501,33 @@ function getProvider(providerModel: string): string | null {
 function ensureProviderPrefix(model: string, providerHint?: string): string {
   const raw = stripComment(model).trim();
   if (!raw) return "";
-  if (raw.includes(":")) return raw;
+  // Check if it already starts with a known provider prefix (e.g. "openai:", "openrouter:")
+  // OpenRouter model IDs contain colons (e.g. "nvidia/nemotron-3.5-lightning:free")
+  // so a naive raw.includes(":") would wrongly skip adding the prefix.
+  const colonIdx = raw.indexOf(":");
+  if (colonIdx > 0) {
+    const candidate = raw.slice(0, colonIdx);
+    if (candidate in PROVIDERS || candidate === providerHint) {
+      return raw;
+    }
+  }
   if (!providerHint) return raw;
   return `${providerHint}:${raw}`;
 }
 
 function isCustomProvider(provider: string): boolean {
-  return !NATIVE_PROVIDERS.has(provider);
+  return !(provider in PROVIDERS);
 }
 
 function pickDefaultModels(allItems: ModelOption[]): ModelOption[] {
-  // Always include unlocked openrouter free models in the default set
-  const freeOpenrouter = allItems.filter((item) =>
-    item.provider === "openrouter" && !item.locked && item.value.endsWith(":free")
-  );
   const popular = allItems.filter((item) => {
     const provider = item.provider || "";
-    return PRIMARY_NATIVE_PROVIDERS.has(provider);
+    return PRIMARY_PROVIDERS.has(provider);
   });
   if (popular.length > 0) {
-    const combined = [...popular.slice(0, MAX_DEFAULT_MODELS)];
-    for (const fr of freeOpenrouter) {
-      if (!combined.some((c) => c.value === fr.value)) combined.push(fr);
-    }
-    return combined;
+    return popular.slice(0, MAX_DEFAULT_MODELS);
   }
-  const base = allItems.filter((item) => (item.provider || "") !== "ollama").slice(0, MAX_DEFAULT_MODELS);
-  for (const fr of freeOpenrouter) {
-    if (!base.some((c) => c.value === fr.value)) base.push(fr);
-  }
-  return base;
+  return allItems.filter((item) => (item.provider || "") !== "ollama").slice(0, MAX_DEFAULT_MODELS);
 }
 
 function joinWithSeparator(top: ModelOption[], rest: ModelOption[]): ModelOption[] {

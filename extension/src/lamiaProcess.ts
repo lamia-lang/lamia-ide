@@ -4,6 +4,8 @@ import * as path from "path";
 import * as fs from "fs";
 import { spawn, ChildProcess } from "child_process";
 import { getApiKey } from "./envHelper";
+import { OPENROUTER_PROXY_API_URL, PROVIDER_KEY_MAP } from "./providerRegistry";
+import { getDeviceToken } from "./deviceId";
 import { ensureLamia } from "./lamiaInstaller";
 
 export interface FileWrite {
@@ -69,15 +71,16 @@ export class LamiaProcess {
       Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
     );
 
-    const keyMap: Record<string, string> = {
-      anthropic: "ANTHROPIC_API_KEY",
-      openai: "OPENAI_API_KEY",
-      openrouter: "OPENROUTER_API_KEY",
-    };
-    for (const [provider, envKey] of Object.entries(keyMap)) {
+    for (const [provider, envKey] of Object.entries(PROVIDER_KEY_MAP)) {
       const key = getApiKey(provider);
       if (key) envVars[envKey] = key;
     }
+    // OpenRouter always gets a token: user's BYOK key or a device token.
+    if (!envVars.OPENROUTER_API_KEY) {
+      envVars.OPENROUTER_API_KEY = getDeviceToken();
+    }
+    // Route all OpenRouter traffic through the IDE proxy.
+    envVars.OPENROUTER_API_URL = OPENROUTER_PROXY_API_URL;
 
     fs.mkdirSync(path.dirname(this._logFile), { recursive: true });
 

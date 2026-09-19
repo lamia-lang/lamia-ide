@@ -1,15 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { PROVIDER_KEY_MAP, VALIDATION_ENDPOINTS } from "./providerRegistry";
 
 const LAMIA_DIR = path.join(os.homedir(), ".lamia");
 const ENV_FILE = path.join(LAMIA_DIR, ".env");
-
-const PROVIDER_KEY_MAP: Record<string, string> = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  openrouter: "OPENROUTER_API_KEY",
-};
 
 function parseEnvFile(content: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -102,24 +97,7 @@ export function maskKey(key: string): string {
   return key.slice(0, 4) + "..." + key.slice(-4);
 }
 
-const VALIDATION_ENDPOINTS: Record<string, { url: string; headers: (key: string) => Record<string, string> }> = {
-  openai: {
-    url: "https://api.openai.com/v1/models",
-    headers: (key) => ({ "Authorization": `Bearer ${key}` }),
-  },
-  anthropic: {
-    url: "https://api.anthropic.com/v1/models",
-    headers: (key) => ({
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    }),
-  },
-  openrouter: {
-    url: "https://openrouter.ai/api/v1/auth/key",
-    headers: (key) => ({ "Authorization": `Bearer ${key}` }),
-  },
-};
+// VALIDATION_ENDPOINTS imported from providerRegistry.ts
 
 export type KeyValidationResult = { valid: true } | { valid: false; error: string };
 

@@ -8,6 +8,7 @@ const vscodeApi = acquireVsCodeApi();
 let visibleModels = [];
 let allModelsCatalog = [];
 let configuredProviders = [];
+let keyProviders = [];
 let keyInfos = {};
 
 function formatMeta(model, tokens) {
@@ -83,10 +84,12 @@ var keyValidationStatus = {};
 function updateSetupStatus() {
   var el = document.getElementById("setup-status");
   var lines = [];
-  var providers = ["anthropic", "openai", "openrouter"];
+  var providers = keyProviders.length > 0
+    ? keyProviders
+    : [{ name: "anthropic", label: "Anthropic" }, { name: "openai", label: "OpenAI" }, { name: "openrouter", label: "OpenRouter" }];
   for (var pi = 0; pi < providers.length; pi++) {
-    var p = providers[pi];
-    var label = p.charAt(0).toUpperCase() + p.slice(1);
+    var p = providers[pi].name;
+    var label = providers[pi].label;
     if (!configuredProviders.includes(p)) continue;
     var info = keyInfos[p];
     var v = keyValidationStatus[p];
@@ -1122,6 +1125,7 @@ window.addEventListener("message", event => {
       visibleModels = msg.models || [];
       allModelsCatalog = msg.allModels || msg.models || [];
       configuredProviders = msg.configuredProviders;
+      keyProviders = msg.keyProviders || keyProviders;
       keyInfos = msg.keyInfos || {};
       populateModels(msg.selectedModel);
       updateSetupStatus();
@@ -1139,6 +1143,7 @@ window.addEventListener("message", event => {
       visibleModels = msg.models || [];
       allModelsCatalog = msg.allModels || msg.models || [];
       configuredProviders = msg.configuredProviders;
+      keyProviders = msg.keyProviders || keyProviders;
       keyInfos = msg.keyInfos || {};
       populateModels(null);
       updateSetupStatus();

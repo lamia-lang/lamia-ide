@@ -19,12 +19,15 @@
     { "id": "o4-mini", "label": "o4-mini" }
   ],
   "openrouter": [
-    { "id": "cohere/north-mini-code:free", "label": "Cohere North Mini Code (free)" },
     { "id": "google/gemma-4-31b-it:free", "label": "Gemma 4 31B (free)" },
+    { "id": "cohere/north-mini-code:free", "label": "Cohere North Mini Code (free)" },
     { "id": "nvidia/nemotron-3.5-lightning:free", "label": "Nemotron 3.5 Lightning (free)" },
+    { "id": "nvidia/nemotron-3-ultra-550b-a55b:free", "label": "Nemotron 3 Ultra 550B (free)" },
     { "id": "thinkingmachines/inkling:free", "label": "Thinking Machines Inkling (free)" },
-    { "id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B" },
-    { "id": "google/gemini-2.5-flash-preview", "label": "Gemini 2.5 Flash" },
-    { "id": "deepseek/deepseek-chat-v3", "label": "DeepSeek V3" }
+    { "id": "google/gemini-3.8-flash", "label": "Gemini 3.8 Flash" },
+    { "id": "deepseek/deepseek-v4.1-flash", "label": "DeepSeek V4.1 Flash" },
+    { "id": "openai/gpt-6-astra", "label": "GPT-6 Astra" },
+    { "id": "inception/mercury-2.5", "label": "Mercury 2.5" },
+    { "id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B" }
   ]
 }

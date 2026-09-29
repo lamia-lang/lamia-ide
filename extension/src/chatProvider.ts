@@ -9,6 +9,7 @@ import {
   ensureGlobalConfig,
   ModelOption,
 } from "./configHelper";
+import { KEY_PROVIDERS } from "./providerRegistry";
 import {
   Chat,
   ChatMessage,
@@ -77,6 +78,7 @@ type HostMessage =
       models: ModelOption[];
       allModels: ModelOption[];
       configuredProviders: string[];
+      keyProviders: { name: string; label: string }[];
       keyInfos: Record<string, { source: string; masked: string }>;
       selectedModel: string | null;
       messages: ChatMessage[];
@@ -87,6 +89,7 @@ type HostMessage =
       models: ModelOption[];
       allModels: ModelOption[];
       configuredProviders: string[];
+      keyProviders: { name: string; label: string }[];
       keyInfos: Record<string, { source: string; masked: string }>;
     }
   | {
@@ -1052,6 +1055,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       models: dropdown.defaultModels,
       allModels: dropdown.allModels,
       configuredProviders,
+      keyProviders: KEY_PROVIDERS,
       keyInfos,
       selectedModel,
       messages: this._chat.messages.map(m => (
@@ -1092,6 +1096,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
       models: dropdown.defaultModels,
       allModels: dropdown.allModels,
       configuredProviders,
+      keyProviders: KEY_PROVIDERS,
       keyInfos,
     });
   }
@@ -1659,9 +1664,7 @@ export class LamiaChatProvider implements vscode.WebviewViewProvider {
     <div class="setup-row">
       <label>Provider</label>
       <select id="setup-provider">
-        <option value="anthropic">Anthropic</option>
-        <option value="openai">OpenAI</option>
-        <option value="openrouter">OpenRouter</option>
+        ${KEY_PROVIDERS.map((p) => `<option value="${p.name}">${p.label}</option>`).join("\n        ")}
       </select>
     </div>
     <div class="setup-row">

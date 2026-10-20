@@ -8,3 +8,4 @@ extension/node_modules/
 extension/vitest.config.js
 extension/vitest.config.js.map
 .lamia/
+site/

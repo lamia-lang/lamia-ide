@@ -45,6 +45,11 @@ vi.mock("vscode", () => ({
       onDidCloseHandlers.push(cb);
       return { dispose: vi.fn() };
     }),
+    createFileSystemWatcher: vi.fn(() => ({
+      onDidChange: vi.fn(),
+      onDidCreate: vi.fn(),
+      dispose: vi.fn(),
+    })),
   },
   window: {},
   Range: class {
@@ -76,6 +81,7 @@ vi.mock("vscode", () => ({
 
 import { LamiaDiagnosticsProvider } from "./diagnosticsProvider";
 import { execFile } from "child_process";
+import * as vscode from "vscode";
 
 const mockExecFile = vi.mocked(execFile);
 
@@ -125,10 +131,47 @@ describe("LamiaDiagnosticsProvider", () => {
     expect(mockExecFile).not.toHaveBeenCalled();
   });
 
-  it("ignores .hu files (templates have no syntax to check)", () => {
+  it("calls lamia inspect on file open for .hu files", () => {
     const doc = { uri: { fsPath: "/tmp/test.hu" }, fileName: "/tmp/test.hu" };
     fireOpen(doc);
-    expect(mockExecFile).not.toHaveBeenCalled();
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "/usr/bin/lamia",
+      ["inspect", "/tmp/test.hu", "--json"],
+      expect.objectContaining({ timeout: 15_000 }),
+      expect.any(Function),
+    );
+  });
+
+  it("sets .hu lint diagnostics from inspect output", () => {
+    const doc = { uri: { fsPath: "/tmp/prompt.hu" }, fileName: "/tmp/prompt.hu" };
+    mockTextDocuments = [
+      {
+        uri: { fsPath: "/tmp/prompt.hu" },
+        lineAt: () => ({ text: "# Title" }),
+      },
+    ];
+    mockExecFile.mockImplementationOnce((_cmd: any, _args: any, _opts: any, cb: any) => {
+      cb(null, JSON.stringify({
+        executable: false,
+        steps: [],
+        diagnostics: [
+          { severity: "warning", message: "[HUW002] Markdown headers", line: 1, col: 0, source: "lamia-lint" },
+        ],
+      }));
+      return {} as any;
+    });
+
+    fireOpen(doc);
+
+    const diags = mockDiagnosticCollection.set.mock.calls[0][1];
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toBe("[HUW002] Markdown headers");
+    expect(diags[0].severity).toBe(1);
+  });
+
+  it("watches .lm and .hu files on disk", () => {
+    expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledWith("**/*.{lm,hu}");
   });
 
   it("debounces on-change events", () => {

@@ -84,6 +84,7 @@ import { execFile } from "child_process";
 import * as vscode from "vscode";
 
 const mockExecFile = vi.mocked(execFile);
+const mockStdin = { end: vi.fn() };
 
 describe("LamiaDiagnosticsProvider", () => {
   beforeEach(() => {
@@ -94,6 +95,7 @@ describe("LamiaDiagnosticsProvider", () => {
     onDidSaveHandlers.length = 0;
     onDidCloseHandlers.length = 0;
     mockTextDocuments = [];
+    mockExecFile.mockReturnValue({ stdin: mockStdin } as any);
     new LamiaDiagnosticsProvider();
   });
 
@@ -148,6 +150,7 @@ describe("LamiaDiagnosticsProvider", () => {
     mockTextDocuments = [
       {
         uri: { fsPath: "/tmp/prompt.hu" },
+        getText: () => "",
         lineAt: () => ({ text: "# Title" }),
       },
     ];
@@ -170,6 +173,34 @@ describe("LamiaDiagnosticsProvider", () => {
     expect(diags[0].severity).toBe(1);
   });
 
+  it("sends unsaved editor content via --stdin for open documents", () => {
+    const doc = { uri: { fsPath: "/tmp/main.lm" }, fileName: "/tmp/main.lm" };
+    mockTextDocuments = [
+      {
+        uri: { fsPath: "/tmp/main.lm" },
+        getText: () => 'clean(raw_row="./in.csv")\n',
+        lineAt: () => ({ text: "" }),
+      },
+    ];
+    fireOpen(doc);
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "/usr/bin/lamia",
+      ["inspect", "/tmp/main.lm", "--json", "--stdin"],
+      expect.objectContaining({ timeout: 15_000 }),
+      expect.any(Function),
+    );
+    expect(mockStdin.end).toHaveBeenCalledWith('clean(raw_row="./in.csv")\n');
+  });
+
+  it("reads from disk when the document is not open", () => {
+    const doc = { uri: { fsPath: "/tmp/closed.lm" }, fileName: "/tmp/closed.lm" };
+    fireOpen(doc);
+
+    expect(mockExecFile.mock.calls[0][1]).toEqual(["inspect", "/tmp/closed.lm", "--json"]);
+    expect(mockStdin.end).not.toHaveBeenCalled();
+  });
+
   it("watches .lm and .hu files on disk", () => {
     expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledWith("**/*.{lm,hu}");
   });
@@ -190,6 +221,7 @@ describe("LamiaDiagnosticsProvider", () => {
     mockTextDocuments = [
       {
         uri: { fsPath: "/tmp/err.lm" },
+        getText: () => "",
         lineAt: () => ({ text: "def foo(" }),
       },
     ];
@@ -227,6 +259,7 @@ describe("LamiaDiagnosticsProvider", () => {
     mockTextDocuments = [
       {
         uri: { fsPath: "/tmp/sem.lm" },
+        getText: () => "",
         lineAt: () => ({ text: 'summarize(aspect="key")' }),
       },
     ];
@@ -261,6 +294,7 @@ describe("LamiaDiagnosticsProvider", () => {
     mockTextDocuments = [
       {
         uri: { fsPath: "/tmp/unr.lm" },
+        getText: () => "",
         lineAt: () => ({ text: "nonexistent()" }),
       },
     ];
@@ -313,6 +347,7 @@ describe("LamiaDiagnosticsProvider", () => {
     mockTextDocuments = [
       {
         uri: { fsPath: "/tmp/w.lm" },
+        getText: () => "",
         lineAt: () => ({ text: "some code" }),
       },
     ];
@@ -349,6 +384,7 @@ describe("LamiaDiagnosticsProvider", () => {
     mockTextDocuments = [
       {
         uri: { fsPath: "/tmp/line.lm" },
+        getText: () => "",
         lineAt: () => ({ text: "invalid syntax here" }),
         lineCount: 1,
       },

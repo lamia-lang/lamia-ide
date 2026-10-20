@@ -111,9 +111,16 @@ export class LamiaDiagnosticsProvider implements vscode.Disposable {
 
   private _runCheck(uri: vscode.Uri, filePath: string): void {
     const cli = resolveLamiaCli();
-    execFile(
+    const openDoc = vscode.workspace.textDocuments.find(
+      (td) => td.uri.fsPath === uri.fsPath,
+    );
+    const args = ["inspect", filePath, "--json"];
+    if (openDoc) {
+      args.push("--stdin");
+    }
+    const child = execFile(
       cli,
-      ["inspect", filePath, "--json"],
+      args,
       { timeout: INSPECT_TIMEOUT_MS, maxBuffer: 2 * 1024 * 1024 },
       (err, stdout) => {
         if (err && !stdout) {
@@ -130,6 +137,9 @@ export class LamiaDiagnosticsProvider implements vscode.Disposable {
         }
       },
     );
+    if (openDoc) {
+      child.stdin?.end(openDoc.getText());
+    }
   }
 
   private _mapDiagnostics(

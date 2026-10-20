@@ -21,6 +21,7 @@ import { resolveLamiaCli } from "./lamiaDebugRuntime";
 import { collectSystemInfo } from "./systemInfo";
 import { LamiaExecutableDecorationProvider } from "./executableDecorationProvider";
 import { FileReferenceCompletionProvider } from "./fileReferenceCompletionProvider";
+import { StringPathCompletionProvider } from "./stringPathCompletionProvider";
 import { LamiaDiagnosticsProvider } from "./diagnosticsProvider";
 import { checkForUpdate } from "./updateChecker";
 import { McpManager } from "./mcpManager";
@@ -144,17 +145,16 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  const fileRefProvider = new FileReferenceCompletionProvider();
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
-      { language: "lamia" },
-      fileRefProvider,
+      { language: "lamia-prompt" },
+      new FileReferenceCompletionProvider(),
       "@",
     ),
     vscode.languages.registerCompletionItemProvider(
-      { language: "lamia-prompt" },
-      fileRefProvider,
-      "@",
+      { language: "lamia" },
+      new StringPathCompletionProvider(),
+      "/",
     ),
   );
 

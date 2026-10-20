@@ -9,5 +9,6 @@
 - **Hover info** — hover over symbols for documentation
 - **Code lens** — `Run` and `Debug` links appear above the file
 - **Completions** — parameter names suggested when calling `.hu` files
+- **Path completions** — inside a string that starts with `./`, `../`, `~/`, `/` or contains `/` (e.g. `clean("./input/crm/`), the entries of the typed directory are suggested; relative paths resolve against the `.lm` file
 
 For the full Lamia language reference, see the [Lamia Language Docs](https://lamia-lang.github.io/lamia).
